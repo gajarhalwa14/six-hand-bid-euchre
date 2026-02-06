@@ -1,0 +1,31 @@
+.lobby-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+.lobby-box {
+    background: rgba(0, 0, 0, 0.6);
+    padding: 40px;
+    border-radius: 12px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.lobby-box input {
+    display: block;
+    margin: 10px auto;
+    padding: 10px;
+    width: 200px;
+    border-radius: 4px;
+    border: none;
+}
+
+.lobby-box button {
+    background: #ffd700;
+    color: black;
+    margin-top: 20px;
+    width: 220px;
+}

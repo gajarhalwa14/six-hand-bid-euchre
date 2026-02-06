@@ -1,0 +1,76 @@
+.panel {
+    background: rgba(0, 0, 0, 0.8);
+    padding: 15px;
+    border-radius: 8px;
+    color: white;
+    text-align: center;
+    margin-top: 10px;
+    pointer-events: auto;
+}
+
+.bidding-panel {
+    width: 400px;
+}
+
+.row {
+    margin: 10px 0;
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.row label {
+    font-weight: bold;
+    margin-right: 10px;
+    align-self: center;
+}
+
+button {
+    background: #424242;
+    color: white;
+    border: 1px solid #616161;
+}
+
+button.active {
+    background: #ffd700;
+    color: black;
+    border-color: #fff;
+}
+
+button.pass-btn {
+    background: #d32f2f;
+}
+
+button.bid-btn {
+    background: #388e3c;
+    flex-grow: 1;
+}
+
+.actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.active-turn {
+    background: #ff9800;
+    /* Orange */
+    color: black;
+    font-weight: bold;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.05);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}

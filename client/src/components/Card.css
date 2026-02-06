@@ -1,0 +1,66 @@
+.card {
+    width: 80px;
+    height: 120px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 5px;
+    box-sizing: border-box;
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: bold;
+    user-select: none;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card.red {
+    color: #d32f2f;
+}
+
+.card.black {
+    color: #212121;
+}
+
+.card.playable:hover {
+    transform: translateY(-10px);
+    cursor: pointer;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+}
+
+.card.selected {
+    transform: translateY(-20px);
+    box-shadow: 0 0 0 3px #ffd700;
+    /* Gold border */
+}
+
+.card.back {
+    background: repeating-linear-gradient(45deg,
+            #1565c0,
+            #1565c0 10px,
+            #0d47a1 10px,
+            #0d47a1 20px);
+    border: 2px solid white;
+}
+
+.corner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.corner.bottom-right {
+    transform: rotate(180deg);
+}
+
+.center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 32px;
+}
