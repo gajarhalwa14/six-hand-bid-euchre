@@ -1,6 +1,22 @@
-# Six-Hand Bid Euchre
+# Six-Hand Bid Euchre 🃏
 
-A real-time multiplayer implementation of Six-Hand Bid Euchre.
+A real-time multiplayer implementation of Six-Hand Bid Euchre with a modern web interface. Play with 6 players across the internet with synchronized gameplay, bidding system, and complete scoring.
+
+## Features ✨
+
+- **Real-time Multiplayer**: WebSocket-based synchronized gameplay for 6 players
+- **Complete Bidding System**: Standard bids (3-8), Shoot (9), and Loner (10) with proper mechanics
+- **Smart Card Play**: Visual indicators for valid plays, trick winners, and team distinction
+- **Live Game State**: See current bids, tricks taken, scores, and trump suit in real-time
+- **Lobby System**: Create or join rooms with unique room codes
+- **Responsive UI**: Modern, card-game inspired interface that works on desktop and mobile
+
+## Tech Stack 🛠️
+
+- **Frontend**: React + TypeScript + Vite
+- **Backend**: Node.js + Express + Socket.io
+- **Styling**: Vanilla CSS with modern design patterns
+- **Real-time Communication**: Socket.io for bidirectional event-based communication
 
 ## Requirements
 - Node.js (v18+)
