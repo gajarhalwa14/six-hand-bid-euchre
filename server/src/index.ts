@@ -3,7 +3,7 @@ import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import cors from 'cors';
 import { Game } from './game/Game';
-import { ClientToServerEvents, ServerToClientEvents, GameState, Player } from './types';
+import { ClientToServerEvents, ServerToClientEvents, GameState, Player, RoomInfo } from './types';
 
 const app = express();
 app.use(cors());
@@ -62,10 +62,11 @@ function sanitize(state: GameState, playerId: string): GameState {
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    socket.on('joinRoom', (roomId, name) => {
+    socket.on('joinRoom', (roomId, name, isPrivate) => {
         let game = rooms.get(roomId);
         if (!game) {
-            game = new Game(roomId);
+            game = new Game(roomId, isPrivate ?? false);
+            game.onStateChange = () => broadcastState(roomId, game!);
             rooms.set(roomId, game);
         }
 
@@ -78,11 +79,12 @@ io.on('connection', (socket) => {
             } else {
                 game.addPlayer(socket.id, name);
             }
+            game.markActivity();
 
             socket.join(roomId);
 
-            // Auto start if full? 
-            if (game.state.players.length === 6 && game.state.phase === 'LOBBY') {
+            // Auto start immediately for public rooms, bots will fill the rest
+            if (!game.state.isPrivate && game.state.phase === 'LOBBY') {
                 game.start();
             }
 
@@ -90,6 +92,66 @@ io.on('connection', (socket) => {
         } catch (e: any) {
             socket.emit('error', e.message);
         }
+    });
+
+    socket.on('joinRandomRoom', (name) => {
+        // Find a public, LOBBY-phase room with open seats
+        let targetRoomId: string | null = null;
+        for (const [id, game] of rooms) {
+            if (!game.state.isPrivate && game.state.phase === 'LOBBY' && game.state.players.length < 6) {
+                targetRoomId = id;
+                break;
+            }
+        }
+
+        // No matching room — create a fresh public one with a random 6-char code
+        if (!targetRoomId) {
+            targetRoomId = Math.random().toString(36).slice(2, 8).toUpperCase();
+            const newGame = new Game(targetRoomId, false);
+            newGame.onStateChange = () => broadcastState(targetRoomId!, newGame);
+            rooms.set(targetRoomId, newGame);
+        }
+
+        const game = rooms.get(targetRoomId)!;
+
+        try {
+            const existing = game.state.players.find(p => p.name === name);
+            if (existing) {
+                existing.id = socket.id; // Update socket ID
+                existing.isConnected = true;
+            } else {
+                game.addPlayer(socket.id, name);
+            }
+            game.markActivity();
+
+            socket.join(targetRoomId);
+
+            // Tell the client which room they were placed in
+            socket.emit('roomJoined', targetRoomId);
+
+            // Auto start immediately for public rooms, bots will fill the rest
+            if (!game.state.isPrivate && game.state.phase === 'LOBBY') {
+                game.start();
+            }
+
+            broadcastState(targetRoomId, game);
+        } catch (e: any) {
+            socket.emit('error', e.message);
+        }
+    });
+
+    socket.on('requestRoomList', () => {
+        const publicRooms: RoomInfo[] = [];
+        for (const [id, game] of rooms) {
+            if (!game.state.isPrivate && game.state.phase === 'LOBBY' && game.state.players.length < 6) {
+                publicRooms.push({
+                    roomId: id,
+                    playerCount: game.state.players.filter(p => p !== null).length // Assuming players array can have nulls or length just works
+                });
+                if (publicRooms.length >= 5) break;
+            }
+        }
+        socket.emit('roomList', publicRooms);
     });
 
     // Generic Action Handler Helper
@@ -108,6 +170,7 @@ io.on('connection', (socket) => {
             const pIndex = game.state.players.findIndex(p => p.id === socket.id);
             if (pIndex === -1) throw new Error("Not a player");
 
+            game.markActivity();
             fn(); // Execute action
 
             broadcastState(roomId, game);
@@ -115,6 +178,32 @@ io.on('connection', (socket) => {
             socket.emit('error', e.message);
         }
     };
+
+    socket.on('chooseSeat', (seatIndex) => {
+        handleAction(() => {
+            const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
+            const game = rooms.get(roomId!)!;
+            game.handleChooseSeat(socket.id, seatIndex);
+        });
+    });
+
+    socket.on('randomizeSeats', () => {
+        handleAction(() => {
+            const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
+            const game = rooms.get(roomId!)!;
+            game.handleRandomizeSeats(socket.id);
+        });
+    });
+
+    socket.on('startGame', () => {
+        handleAction(() => {
+            const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
+            const game = rooms.get(roomId!)!;
+            if (game.state.isPrivate && game.state.hostId === socket.id && game.state.phase === 'LOBBY') {
+                game.start();
+            }
+        });
+    });
 
     socket.on('bid', (bid) => {
         handleAction(() => {
@@ -168,6 +257,21 @@ io.on('connection', (socket) => {
         console.log("Disconnected", socket.id);
     });
 });
+
+// --- Room Garbage Collection ---
+setInterval(() => {
+    const now = Date.now();
+    for (const [roomId, game] of rooms.entries()) {
+        const idleTime = now - game.lastActivityTime;
+        const hasHumans = game.state.players.some(p => !p.isBot); // simplified check for now
+
+        // Remove if absolutely no activity for 2 hours, OR empty of humans for 10 minutes
+        if (idleTime > 2 * 60 * 60 * 1000 || (!hasHumans && idleTime > 10 * 60 * 1000)) {
+            console.log(`Garbage collecting idle room: ${roomId}`);
+            rooms.delete(roomId);
+        }
+    }
+}, 60 * 1000); // Check every minute
 
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => {

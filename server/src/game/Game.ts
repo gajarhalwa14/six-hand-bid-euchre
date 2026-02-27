@@ -1,13 +1,18 @@
 import { GameState, Player, Card, Bid, Suit, Phase, Trick, TeamId, SUITS, BidType } from '../types';
 import { Deck } from './Deck';
 import { determineTrickWinner, getEffectiveSuit } from './CardUtils';
+import { BotAI } from './BotAI';
 
 export class Game {
     state: GameState;
     private deck: Deck;
+    public onStateChange?: () => void;
+    private botTimeout?: NodeJS.Timeout;
+    public lastActivityTime: number;
 
-    constructor(roomId: string) {
+    constructor(roomId: string, isPrivate: boolean = false) {
         this.deck = new Deck();
+        this.lastActivityTime = Date.now();
         this.state = {
             roomId,
             players: [],
@@ -24,26 +29,136 @@ export class Game {
             scores: { A: 0, B: 0 },
             dealerIndex: -1,
             biddingTurnCount: 0,
-            trump: null
+            trump: null,
+            isPrivate,
+            hostId: null
         };
+    }
+
+    markActivity() {
+        this.lastActivityTime = Date.now();
     }
 
     addPlayer(id: string, name: string): Player | null {
         if (this.state.players.length >= 6) return null;
-        const team: TeamId = this.state.players.length % 2 === 0 ? 'A' : 'B';
+
+        let seatIndex: number | undefined;
+        if (this.state.isPrivate) {
+            // Find first available seat
+            const taken = new Set(this.state.players.map(p => p.seatIndex));
+            for (let i = 0; i < 6; i++) {
+                if (!taken.has(i)) {
+                    seatIndex = i;
+                    break;
+                }
+            }
+            if (!this.state.hostId) {
+                this.state.hostId = id; // First player in private room is host
+            }
+        } else {
+            // Public room: random assigning
+            const availableSeats = [0, 1, 2, 3, 4, 5].filter(i =>
+                !this.state.players.some(p => p.seatIndex === i)
+            );
+            if (availableSeats.length > 0) {
+                seatIndex = availableSeats[Math.floor(Math.random() * availableSeats.length)];
+            } else {
+                seatIndex = this.state.players.length; // Fallback
+            }
+        }
+
+        const team: TeamId = (seatIndex! % 2 === 0) ? 'A' : 'B';
+
         const player: Player = {
-            id, name, team, hand: [], isConnected: true
+            id, name, team, hand: [], isConnected: true, seatIndex, isBot: false
         };
         this.state.players.push(player);
         return player;
     }
 
+    tryJoinInProgress(id: string, name: string): Player | null {
+        // Find a bot seat to take over
+        const botIndex = this.state.players.findIndex(p => p.isBot);
+        if (botIndex === -1) return null; // No bots available
+
+        const bot = this.state.players[botIndex];
+
+        // Replace bot with human
+        const player: Player = {
+            id,
+            name,
+            team: bot.team,
+            hand: bot.hand, // inherit the bot's hand
+            isConnected: true,
+            seatIndex: bot.seatIndex,
+            isBot: false
+        };
+
+        this.state.players[botIndex] = player;
+        return player;
+    }
+
+    handleChooseSeat(playerId: string, targetSeat: number) {
+        if (!this.state.isPrivate || this.state.phase !== 'LOBBY') return;
+        if (targetSeat < 0 || targetSeat > 5) return;
+
+        const player = this.state.players.find(p => p.id === playerId);
+        if (!player) return;
+
+        const occupier = this.state.players.find(p => p.seatIndex === targetSeat);
+        if (occupier) {
+            // Swap seats
+            occupier.seatIndex = player.seatIndex;
+            occupier.team = (occupier.seatIndex! % 2 === 0) ? 'A' : 'B';
+        }
+
+        player.seatIndex = targetSeat;
+        player.team = (targetSeat % 2 === 0) ? 'A' : 'B';
+    }
+
+    handleRandomizeSeats(playerId: string) {
+        if (!this.state.isPrivate || this.state.phase !== 'LOBBY' || this.state.hostId !== playerId) return;
+
+        const available = [0, 1, 2, 3, 4, 5];
+        for (let i = available.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [available[i], available[j]] = [available[j], available[i]];
+        }
+
+        this.state.players.forEach((p, i) => {
+            p.seatIndex = available[i];
+            p.team = (p.seatIndex % 2 === 0) ? 'A' : 'B';
+        });
+    }
+
     // Start game from Lobby
     start() {
-        if (this.state.players.length !== 6) throw new Error("Need 6 players");
+        // Fill empty seats with bots
+        const takenSeats = new Set(this.state.players.map(p => p.seatIndex));
+        for (let i = 0; i < 6; i++) {
+            if (!takenSeats.has(i)) {
+                const botId = `bot-${Math.random().toString(36).substr(2, 6)}`;
+                const botName = `Bot ${['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta'][i]}`;
+                const team: TeamId = (i % 2 === 0) ? 'A' : 'B';
+                this.state.players.push({
+                    id: botId,
+                    name: botName,
+                    team,
+                    hand: [],
+                    isConnected: true,
+                    seatIndex: i,
+                    isBot: true
+                });
+            }
+        }
+
+        // Sort players array so index matches seatIndex (important for next-turn logic)
+        this.state.players.sort((a, b) => a.seatIndex! - b.seatIndex!);
+
         this.state.dealerIndex = Math.floor(Math.random() * 6);
         this.state.scores = { A: 0, B: 0 };
         this.nextHand();
+        this.triggerBotTurnIfNeeded();
     }
 
     private nextHand() {
@@ -65,6 +180,8 @@ export class Game {
         // Reset trick state
         this.state.currentTrick = { leadSuit: null, plays: [], winnerIndex: null };
         this.state.tricksHistory = [];
+
+        this.triggerBotTurnIfNeeded();
     }
 
     handleBid(playerIndex: number, bid: Bid | 'PASS') {
@@ -104,6 +221,8 @@ export class Game {
             this.state.currentBidderIndex = (this.state.currentBidderIndex + 1) % 6;
             if (bid !== 'PASS') this.state.bids.push(bid); // Record history
         }
+
+        this.triggerBotTurnIfNeeded();
     }
 
     // Helper to compare bids
@@ -162,6 +281,7 @@ export class Game {
             // Standard Euchre: Play starts left of dealer.
             this.state.turnIndex = (this.state.dealerIndex + 1) % 6;
         }
+        this.triggerBotTurnIfNeeded();
     }
 
     handleCardPlay(playerIndex: number, cardId: string) {
@@ -217,6 +337,7 @@ export class Game {
             }
             this.state.turnIndex = next;
         }
+        this.triggerBotTurnIfNeeded();
     }
 
     private resolveTrick() {
@@ -233,14 +354,24 @@ export class Game {
         // Add to history
         this.state.tricksHistory.push({ ...this.state.currentTrick });
 
-        // Reset trick
-        this.state.currentTrick = { leadSuit: null, plays: [], winnerIndex: null };
-        this.state.turnIndex = winner.playerIndex; // Winner leads
+        this.state.phase = 'TRICK_END';
+        if (this.onStateChange) this.onStateChange();
 
-        // Check Hand End
-        if (this.state.tricksHistory.length === 8) {
-            this.scoreHand();
-        }
+        // 1.5s delay so players can see the completed trick + winner
+        setTimeout(() => {
+            // Reset trick
+            this.state.currentTrick = { leadSuit: null, plays: [], winnerIndex: null };
+            this.state.turnIndex = winner.playerIndex; // Winner leads
+
+            // Check Hand End
+            if (this.state.tricksHistory.length === 8) {
+                this.scoreHand();
+            } else {
+                this.state.phase = 'TRICK_PLAY';
+                this.triggerBotTurnIfNeeded();
+            }
+            if (this.onStateChange) this.onStateChange();
+        }, 1500);
     }
 
     private scoreHand() {
@@ -308,6 +439,8 @@ export class Game {
             .map((pl, i) => ({ pl, i }))
             .filter(({ pl, i }) => pl.team === p.team && i !== playerIndex)
             .map(x => x.i);
+
+        this.triggerBotTurnIfNeeded();
     }
 
     handleShootPass(playerIndex: number, cardId: string) {
@@ -333,6 +466,50 @@ export class Game {
                 leader = (leader + 1) % 6;
             }
             this.state.turnIndex = leader;
+        }
+        this.triggerBotTurnIfNeeded();
+    }
+
+    private triggerBotTurnIfNeeded() {
+        if (this.botTimeout) clearTimeout(this.botTimeout);
+
+        let activeIndex = -1;
+        if (this.state.phase === 'BIDDING') activeIndex = this.state.currentBidderIndex;
+        else if (this.state.phase === 'TRICK_PLAY') activeIndex = this.state.turnIndex;
+        else if (this.state.phase === 'SHOOT_DISCARD') activeIndex = this.state.shootDiscardWaitList[0] ?? -1;
+        else if (this.state.phase === 'SHOOT_PASS') activeIndex = this.state.shootPassWaitList[0] ?? -1;
+
+        if (activeIndex === -1) return;
+
+        const player = this.state.players[activeIndex];
+        if (!player || !player.isBot) return;
+
+        // Schedule bot action
+        this.botTimeout = setTimeout(() => {
+            this.executeBotAction(activeIndex);
+        }, 800);
+    }
+
+    private executeBotAction(playerIndex: number) {
+        try {
+            if (this.state.phase === 'BIDDING') {
+                const bid = BotAI.calculateBid(this.state, playerIndex);
+                this.handleBid(playerIndex, bid);
+            } else if (this.state.phase === 'TRICK_PLAY') {
+                const cardId = BotAI.chooseCardToPlay(this.state, playerIndex);
+                this.handleCardPlay(playerIndex, cardId);
+            } else if (this.state.phase === 'SHOOT_DISCARD') {
+                const cardIds = BotAI.chooseDiscard(this.state, playerIndex);
+                this.handleShootDiscard(playerIndex, cardIds);
+            } else if (this.state.phase === 'SHOOT_PASS') {
+                const cardId = BotAI.choosePass(this.state, playerIndex);
+                this.handleShootPass(playerIndex, cardId);
+            }
+
+            // Notify if bound
+            if (this.onStateChange) this.onStateChange();
+        } catch (e) {
+            console.error("Bot AI threw error:", e);
         }
     }
 }

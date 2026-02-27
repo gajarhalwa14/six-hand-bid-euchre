@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import type { GameState } from '../types';
-import { determineTrickWinner } from '@shared/CardUtils';
+import React, { useState, useMemo } from 'react';
+import type { GameState, Card as CardType } from '../types';
+import { determineTrickWinner, getEffectiveSuit } from '@shared/CardUtils';
 import { Card } from './Card';
 import { Controls } from './Controls';
 import { socket } from '../socket';
@@ -16,6 +16,42 @@ export const GameTable: React.FC<Props> = ({ gameState, myId }) => {
     const myPlayer = gameState.players[myIndex];
 
     const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
+
+    const sortedHand = useMemo(() => {
+        if (!myPlayer) return [];
+        const trump = gameState.trump;
+
+        const rankValues: Record<string, number> = { 'A': 6, 'K': 5, 'Q': 4, 'J': 3, '10': 2, '9': 1 };
+
+        return [...myPlayer.hand].sort((a, b) => {
+            const suitA = getEffectiveSuit(a, trump);
+            const suitB = getEffectiveSuit(b, trump);
+
+            // 1. Trump suit first
+            if (trump) {
+                const aIsTrump = suitA === trump;
+                const bIsTrump = suitB === trump;
+                if (aIsTrump && !bIsTrump) return -1;
+                if (!aIsTrump && bIsTrump) return 1;
+            }
+
+            // 2. Group by suit
+            if (suitA !== suitB) {
+                return suitA.localeCompare(suitB);
+            }
+
+            // 3. Sort by rank descending
+            const getVisualRank = (c: CardType, effSuit: string) => {
+                if (trump && effSuit === trump && c.rank === 'J') {
+                    if (c.suit === trump) return 8; // Right Bower
+                    return 7; // Left Bower
+                }
+                return rankValues[c.rank];
+            };
+
+            return getVisualRank(b, suitB) - getVisualRank(a, suitA);
+        });
+    }, [myPlayer?.hand, gameState.trump]);
 
     const toggleSelect = (id: string) => {
         if (gameState.phase === 'TRICK_PLAY') {
@@ -77,48 +113,55 @@ export const GameTable: React.FC<Props> = ({ gameState, myId }) => {
                 )}
             </div>
 
-            {/* Players */}
-            {gameState.players.map((p, i) => {
-                const relIndex = (i - myIndex + 6) % 6;
+            {/* Players & Seats */}
+            {[0, 1, 2, 3, 4, 5].map((seatNum) => {
+                const mySeat = myPlayer?.seatIndex ?? myIndex;
+                const relIndex = (seatNum - mySeat + 6) % 6;
                 const pos = POSITIONS[relIndex];
-                const isTurn = gameState.turnIndex === i;
 
-                // Find bid
-                const playerBid = gameState.bids.find(b => b.playerIndex === i);
-                const hasPassed = gameState.phase === 'BIDDING' && !playerBid && gameState.bids.length > 0; // logic for pass is tricky since passed bids aren't stored in `bids` array in Game.ts?
-                // Wait, Game.ts: "if (bid !== 'PASS') this.state.bids.push(bid);"
-                // So passes are NOT in state.bids.
-                // We only know if it IS their turn?
-                // The user asked: "indicate the bids that each player made".
-                // Since `bids` only stores active bids, we can show the active bid if it exists.
-                // If they are not in `bids` and it's past their turn? We don't track who passed explicitly in public state except by deduction?
-                // Actually `Game.ts` does NOT store passes explicitly.
-                // But we can show the bid if they made one.
+                const p = gameState.players.find(pl => pl.seatIndex === seatNum)
+                    // Fallback for older states or public rooms before sorting
+                    || (gameState.phase === 'LOBBY' && !gameState.isPrivate && seatNum < gameState.players.length ? gameState.players[seatNum] : undefined);
+
+                if (!p) {
+                    // Empty seat
+                    if (gameState.phase === 'LOBBY' && gameState.isPrivate) {
+                        return (
+                            <div key={`empty-${seatNum}`} className={`player-seat ${pos} empty-seat`}>
+                                <button className="claim-seat-btn" onClick={() => socket.emit('chooseSeat', seatNum)}>
+                                    Sit Here
+                                </button>
+                            </div>
+                        );
+                    }
+                    return null; // Don't render empty seats in game or public lobby
+                }
+
+                // Render occupant
+                const isTurn = gameState.turnIndex !== -1 && gameState.players[gameState.turnIndex]?.id === p.id;
+                const teamClass = `team-${p.team}`;
+                const playerBid = gameState.bids.find(b => gameState.players[b.playerIndex]?.id === p.id);
 
                 let bidText = null;
-                if (gameState.phase === 'BIDDING') {
-                    if (playerBid) {
-                        bidText = `${playerBid.amount} ${playerBid.type === 'SUIT' ? playerBid.suit : playerBid.type}`;
-                    }
-                    // If it's NOT their turn and they don't have a bid in `bids` list... they passed?
-                    // Or they haven't acted yet.
-                    // It's hard to distinguish "Passed" vs "Waiting" without `biddingTurnCount` history.
-                    // But we can just show "Bid: X" for now.
+                if (gameState.phase === 'BIDDING' && playerBid) {
+                    bidText = `${playerBid.amount} ${playerBid.type === 'SUIT' ? playerBid.suit : playerBid.type}`;
                 }
 
                 return (
-                    <div key={i} className={`player-seat ${pos} ${isTurn ? 'turn' : ''} team-${p.team}`}>
-                        <div className="avatar">{p.name} ({p.team})</div>
+                    <div key={p.id} className={`player-seat ${pos} ${isTurn ? 'turn' : ''} ${teamClass}`}>
+                        <div className="avatar">
+                            {p.name} {p.isBot ? '🤖' : ''} <br />({p.team})
+                        </div>
                         {bidText && <div className="bid-bubble">{bidText}</div>}
-                        <div className="hand-count">{p.hand.length} Cards</div>
-                        {gameState.declarerIndex === i && <div className="badge">Bidder</div>}
+                        {gameState.phase !== 'LOBBY' && <div className="hand-count">{p.hand.length} Cards</div>}
+                        {gameState.declarerIndex !== null && gameState.players[gameState.declarerIndex]?.id === p.id && <div className="badge">Bidder</div>}
                     </div>
                 );
             })}
 
             {/* Center Trick */}
             <div className="trick-zone">
-                {gameState.currentTrick.plays.map((play, _, allPlays) => {
+                {gameState.currentTrick.plays.map((play) => {
                     const relIndex = (play.playerIndex - myIndex + 6) % 6;
                     const isWinning = winningPlay && play.playerIndex === winningPlay.playerIndex;
                     const teamClass = gameState.players[play.playerIndex].team === 'A' ? 'team-A' : 'team-B';
@@ -134,13 +177,14 @@ export const GameTable: React.FC<Props> = ({ gameState, myId }) => {
 
             {/* My Hand */}
             <div className="my-hand">
-                {myPlayer.hand.map((card) => (
+                {sortedHand.map((card) => (
                     <Card
                         key={card.id}
                         card={card}
                         playable={gameState.phase === 'TRICK_PLAY' && gameState.turnIndex === myIndex}
                         selected={selectedCardIds.includes(card.id)}
                         onClick={() => toggleSelect(card.id)}
+                        isTrump={gameState.trump ? getEffectiveSuit(card, gameState.trump) === gameState.trump : false}
                     />
                 ))}
             </div>
@@ -149,6 +193,33 @@ export const GameTable: React.FC<Props> = ({ gameState, myId }) => {
             <div className="controls-overlay">
                 <Controls gameState={gameState} myIndex={myIndex} selectedCardIds={selectedCardIds} />
             </div>
+
+            {/* Lobby Waiting Overlay */}
+            {gameState.phase === 'LOBBY' && (
+                <div className="lobby-waiting-overlay">
+                    <h2>Waiting for Players...</h2>
+                    <p>{gameState.players.length} / 6 joined</p>
+
+                    {gameState.isPrivate && (
+                        <div className="room-code-display">
+                            <span>Room Code:</span>
+                            <strong>{gameState.roomId}</strong>
+                        </div>
+                    )}
+
+                    {gameState.isPrivate && gameState.hostId === myId && (
+                        <div className="host-controls">
+                            <button className="btn-secondary" onClick={() => socket.emit('randomizeSeats')}>🎲 Randomize Seats</button>
+                            <button
+                                className="btn-primary"
+                                onClick={() => socket.emit('startGame')}
+                            >
+                                🚀 Start Match
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 };

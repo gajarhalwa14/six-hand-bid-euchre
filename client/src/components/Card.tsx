@@ -9,6 +9,7 @@ interface Props {
     selected?: boolean;
     playable?: boolean;
     hidden?: boolean; // Face down
+    isTrump?: boolean;
 }
 
 const suitSymbols: Record<Suit, string> = {
@@ -18,7 +19,7 @@ const suitSymbols: Record<Suit, string> = {
     Diamonds: '♦'
 };
 
-export const Card: React.FC<Props> = ({ card, onClick, selected, playable, hidden }) => {
+export const Card: React.FC<Props> = ({ card, onClick, selected, playable, hidden, isTrump }) => {
     const color = (card.suit === 'Hearts' || card.suit === 'Diamonds') ? 'red' : 'black';
 
     if (hidden) {
@@ -29,7 +30,7 @@ export const Card: React.FC<Props> = ({ card, onClick, selected, playable, hidde
 
     return (
         <div
-            className={clsx('card', color, { selected, playable })}
+            className={clsx('card', color, { selected, playable, trump: isTrump })}
             onClick={playable || selected !== undefined ? onClick : undefined}
         >
             <div className="corner top-left">

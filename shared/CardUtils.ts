@@ -1,4 +1,4 @@
-import { Card, Suit, Rank, BidType } from './types';
+import type { Card, Suit, Rank, BidType } from './types';
 
 const RANK_VALUES: Record<Rank, number> = {
     '9': 0, '10': 1, 'J': 2, 'Q': 3, 'K': 4, 'A': 5

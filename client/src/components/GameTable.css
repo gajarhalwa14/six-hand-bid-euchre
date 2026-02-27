@@ -290,3 +290,145 @@
     color: #ffcc80;
     /* Light orange */
 }
+
+/* Lobby Waiting Overlay */
+.lobby-waiting-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.75);
+    padding: 30px 50px;
+    border-radius: 12px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    z-index: 500;
+}
+
+.lobby-waiting-overlay h2 {
+    margin: 0 0 10px 0;
+    font-size: 1.8rem;
+    color: #fff;
+}
+
+.lobby-waiting-overlay p {
+    margin: 0 0 20px 0;
+    font-size: 1.2rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.room-code-display {
+    background: rgba(255, 215, 0, 0.1);
+    border: 1px solid #ffd700;
+    padding: 15px 30px;
+    border-radius: 8px;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+}
+
+.room-code-display span {
+    font-size: 0.9rem;
+    color: rgba(255, 215, 0, 0.8);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.room-code-display strong {
+    font-size: 2.5rem;
+    color: #ffd700;
+    letter-spacing: 0.15em;
+    font-family: monospace;
+}
+
+/* Empty Seat Picker */
+.empty-seat {
+    border: 2px dashed rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.4);
+    transition: all 0.2s ease;
+}
+
+.empty-seat:hover {
+    border-color: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.claim-seat-btn {
+    background: transparent;
+    color: white;
+    border: none;
+    font-size: 0.75rem;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    text-transform: uppercase;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    opacity: 0.6;
+}
+
+.empty-seat:hover .claim-seat-btn {
+    opacity: 1;
+}
+
+/* Host Controls in Lobby */
+.host-controls {
+    margin-top: 25px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #00c9ff, #0077ff);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0, 119, 255, 0.3);
+    transition: all 0.2s;
+    width: 100%;
+}
+
+.btn-primary:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 119, 255, 0.4);
+}
+
+.btn-primary:disabled {
+    background: #555;
+    color: #888;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
+}

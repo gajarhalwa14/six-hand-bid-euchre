@@ -15,9 +15,11 @@ export interface Player {
     team: TeamId;
     hand: Card[]; // Only visible to the player
     isConnected: boolean;
+    seatIndex?: number; // 0-5. For private lobbies.
+    isBot: boolean;
 }
 
-export type Phase = 'LOBBY' | 'BIDDING' | 'SHOOT_DISCARD' | 'SHOOT_PASS' | 'TRICK_PLAY' | 'SCORING' | 'GAME_OVER';
+export type Phase = 'LOBBY' | 'BIDDING' | 'SHOOT_DISCARD' | 'SHOOT_PASS' | 'TRICK_PLAY' | 'TRICK_END' | 'SCORING' | 'GAME_OVER';
 
 export type BidType = 'SUIT' | 'HIGH' | 'LOW';
 
@@ -41,6 +43,8 @@ export interface Trick {
 
 export interface GameState {
     roomId: string;
+    isPrivate: boolean; // Whether the room requires a code to join
+    hostId: string | null; // Player ID of the room host
     players: Player[]; // Array of 6 players (or nulls/placeholders)
     phase: Phase;
 
@@ -75,11 +79,16 @@ export const RANKS: Rank[] = ['9', '10', 'J', 'Q', 'K', 'A'];
 export interface ServerToClientEvents {
     gameState: (state: GameState) => void;
     playerJoined: (player: Player) => void;
+    roomJoined: (roomId: string) => void;
     error: (msg: string) => void;
 }
 
 export interface ClientToServerEvents {
-    joinRoom: (roomId: string, name: string) => void;
+    joinRoom: (roomId: string, name: string, isPrivate?: boolean) => void;
+    joinRandomRoom: (name: string) => void;
+    chooseSeat: (seatIndex: number) => void;
+    randomizeSeats: () => void;
+    startGame: () => void;
     bid: (bid: Bid) => void;
     inputPassBid: () => void; // Pass on bidding
     playCard: (cardId: string) => void;
