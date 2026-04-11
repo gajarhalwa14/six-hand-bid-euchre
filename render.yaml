@@ -2,7 +2,7 @@ services:
   - type: web
     name: six-hand-bid-euchre
     runtime: node
-    buildCommand: cd client && npm install --include=dev && npm run build && cd ../server && npm install --include=dev && npx tsc
+    buildCommand: cd client && npm install --include=dev && npx vite build && cd ../server && npm install --include=dev && npx tsc
     startCommand: node server/dist/index.js
     envVars:
       - key: NODE_ENV
