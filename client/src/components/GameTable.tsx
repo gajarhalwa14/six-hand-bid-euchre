@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import type { GameState, Card as CardType } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import type { GameState, Card as CardType, SeatSwapOffer } from '../types';
 import { determineTrickWinner, getEffectiveSuit } from '@shared/CardUtils';
 import { Card } from './Card';
 import { Controls } from './Controls';
@@ -9,13 +9,39 @@ import './GameTable.css';
 interface Props {
     gameState: GameState;
     myId: string;
+    onLeave: () => void;
 }
 
-export const GameTable: React.FC<Props> = ({ gameState, myId }) => {
+export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     const myIndex = gameState.players.findIndex(p => p.id === myId);
     const myPlayer = gameState.players[myIndex];
 
     const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
+    const [swapOffer, setSwapOffer] = useState<SeatSwapOffer | null>(null);
+    const [swapMessage, setSwapMessage] = useState<string | null>(null);
+
+    useEffect(() => {
+        socket.on('seatSwapOffer', (offer) => setSwapOffer(offer));
+        socket.on('seatSwapResult', (msg) => {
+            setSwapMessage(msg);
+            setTimeout(() => setSwapMessage(null), 3000);
+        });
+        return () => {
+            socket.off('seatSwapOffer');
+            socket.off('seatSwapResult');
+        };
+    }, []);
+
+    const handleSwapRequest = (targetIndex: number) => {
+        socket.emit('requestSeatSwap', targetIndex);
+    };
+
+    const handleSwapResponse = (accepted: boolean) => {
+        if (swapOffer) {
+            socket.emit('respondSeatSwap', swapOffer.fromPlayerIndex, accepted);
+            setSwapOffer(null);
+        }
+    };
 
     const sortedHand = useMemo(() => {
         if (!myPlayer) return [];
@@ -91,6 +117,29 @@ export const GameTable: React.FC<Props> = ({ gameState, myId }) => {
 
     return (
         <div className="table">
+            {/* Back to Home */}
+            <button className="back-home-btn" onClick={onLeave}>
+                &larr; Leave Game
+            </button>
+
+            {/* Swap notification toast */}
+            {swapMessage && <div className="swap-toast">{swapMessage}</div>}
+
+            {/* Swap offer modal */}
+            {swapOffer && (
+                <div className="swap-offer-overlay">
+                    <div className="swap-offer-modal">
+                        <h3>Seat Swap Request</h3>
+                        <p><strong>{swapOffer.fromPlayerName}</strong> wants to swap seats with you.</p>
+                        <p>You will switch teams if you accept.</p>
+                        <div className="swap-offer-actions">
+                            <button className="btn-accept" onClick={() => handleSwapResponse(true)}>Accept</button>
+                            <button className="btn-decline" onClick={() => handleSwapResponse(false)}>Decline</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Info HUD */}
             <div className="hud top-left-hud">
                 <div>Room Code: <strong>{gameState.roomId}</strong></div>
@@ -147,6 +196,14 @@ export const GameTable: React.FC<Props> = ({ gameState, myId }) => {
                     bidText = `${playerBid.amount} ${playerBid.type === 'SUIT' ? playerBid.suit : playerBid.type}`;
                 }
 
+                const canSwap = gameState.phase !== 'LOBBY'
+                    && p.id !== myId
+                    && !p.isBot
+                    && myPlayer
+                    && p.team !== myPlayer.team;
+
+                const pIdx = gameState.players.findIndex(pl => pl.id === p.id);
+
                 return (
                     <div key={p.id} className={`player-seat ${pos} ${isTurn ? 'turn' : ''} ${teamClass}`}>
                         <div className="avatar">
@@ -155,6 +212,11 @@ export const GameTable: React.FC<Props> = ({ gameState, myId }) => {
                         {bidText && <div className="bid-bubble">{bidText}</div>}
                         {gameState.phase !== 'LOBBY' && <div className="hand-count">{p.hand.length} Cards</div>}
                         {gameState.declarerIndex !== null && gameState.players[gameState.declarerIndex]?.id === p.id && <div className="badge">Bidder</div>}
+                        {canSwap && (
+                            <button className="swap-btn" onClick={() => handleSwapRequest(pIdx)}>
+                                Swap Seats
+                            </button>
+                        )}
                     </div>
                 );
             })}

@@ -107,13 +107,45 @@ export class Game {
 
         const occupier = this.state.players.find(p => p.seatIndex === targetSeat);
         if (occupier) {
-            // Swap seats
             occupier.seatIndex = player.seatIndex;
             occupier.team = (occupier.seatIndex! % 2 === 0) ? 'A' : 'B';
         }
 
         player.seatIndex = targetSeat;
         player.team = (targetSeat % 2 === 0) ? 'A' : 'B';
+    }
+
+    handleSeatSwap(requestorIndex: number, targetIndex: number): { valid: boolean; error?: string } {
+        if (this.state.phase === 'LOBBY') return { valid: false, error: "Use seat picker in lobby" };
+        if (requestorIndex < 0 || requestorIndex >= this.state.players.length) return { valid: false, error: "Invalid player" };
+        if (targetIndex < 0 || targetIndex >= this.state.players.length) return { valid: false, error: "Invalid target" };
+        if (requestorIndex === targetIndex) return { valid: false, error: "Can't swap with yourself" };
+
+        const requestor = this.state.players[requestorIndex];
+        const target = this.state.players[targetIndex];
+
+        if (requestor.team === target.team) return { valid: false, error: "Can only swap with a player on the other team" };
+        if (target.isBot) return { valid: false, error: "Can't swap with a bot" };
+
+        return { valid: true };
+    }
+
+    executeSeatSwap(requestorIndex: number, targetIndex: number) {
+        const a = this.state.players[requestorIndex];
+        const b = this.state.players[targetIndex];
+
+        const tempSeat = a.seatIndex;
+        a.seatIndex = b.seatIndex;
+        b.seatIndex = tempSeat;
+
+        a.team = (a.seatIndex! % 2 === 0) ? 'A' : 'B';
+        b.team = (b.seatIndex! % 2 === 0) ? 'A' : 'B';
+
+        const tempHand = a.hand;
+        a.hand = b.hand;
+        b.hand = tempHand;
+
+        this.state.players.sort((x, y) => x.seatIndex! - y.seatIndex!);
     }
 
     handleRandomizeSeats(playerId: string) {
@@ -470,7 +502,7 @@ export class Game {
         this.triggerBotTurnIfNeeded();
     }
 
-    private triggerBotTurnIfNeeded() {
+    triggerBotTurnIfNeeded() {
         if (this.botTimeout) clearTimeout(this.botTimeout);
 
         let activeIndex = -1;

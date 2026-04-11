@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: six-hand-bid-euchre
+    runtime: node
+    buildCommand: cd client && npm install && npm run build && cd ../server && npm install && npx tsc
+    startCommand: node server/dist/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production

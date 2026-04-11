@@ -2,11 +2,15 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import cors from 'cors';
+import path from 'path';
 import { Game } from './game/Game';
 import { ClientToServerEvents, ServerToClientEvents, GameState, Player, RoomInfo } from './types';
 
 const app = express();
 app.use(cors());
+
+const clientDistPath = path.resolve(__dirname, '../../client/dist');
+app.use(express.static(clientDistPath));
 
 const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
@@ -250,10 +254,89 @@ io.on('connection', (socket) => {
         });
     });
 
+    socket.on('leaveRoom', () => {
+        const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
+        if (!roomId) return;
+
+        const game = rooms.get(roomId);
+        if (game) {
+            const pIndex = game.state.players.findIndex(p => p.id === socket.id);
+            if (pIndex !== -1) {
+                const player = game.state.players[pIndex];
+                player.isConnected = false;
+                if (game.state.phase !== 'LOBBY') {
+                    player.isBot = true;
+                    player.name = `Bot ${['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta'][player.seatIndex ?? pIndex]}`;
+                    player.id = `bot-${Math.random().toString(36).substr(2, 6)}`;
+                    game.triggerBotTurnIfNeeded();
+                } else {
+                    game.state.players.splice(pIndex, 1);
+                }
+                if (game.state.hostId === socket.id && game.state.players.length > 0) {
+                    const nextHuman = game.state.players.find(p => !p.isBot);
+                    game.state.hostId = nextHuman?.id ?? game.state.players[0].id;
+                }
+                broadcastState(roomId, game);
+            }
+        }
+        socket.leave(roomId);
+    });
+
+    socket.on('requestSeatSwap', (targetPlayerIndex) => {
+        const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
+        if (!roomId) return;
+        const game = rooms.get(roomId);
+        if (!game) return;
+
+        const requestorIndex = game.state.players.findIndex(p => p.id === socket.id);
+        if (requestorIndex === -1) return;
+
+        const result = game.handleSeatSwap(requestorIndex, targetPlayerIndex);
+        if (!result.valid) {
+            socket.emit('error', result.error!);
+            return;
+        }
+
+        const target = game.state.players[targetPlayerIndex];
+        const targetSocket = io.sockets.sockets.get(target.id);
+        if (!targetSocket) {
+            socket.emit('error', 'Target player is not connected');
+            return;
+        }
+
+        targetSocket.emit('seatSwapOffer', {
+            fromPlayerIndex: requestorIndex,
+            fromPlayerName: game.state.players[requestorIndex].name,
+            toPlayerIndex: targetPlayerIndex
+        });
+        socket.emit('seatSwapResult', `Swap request sent to ${target.name}`);
+    });
+
+    socket.on('respondSeatSwap', (fromPlayerIndex, accepted) => {
+        const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
+        if (!roomId) return;
+        const game = rooms.get(roomId);
+        if (!game) return;
+
+        const myIndex = game.state.players.findIndex(p => p.id === socket.id);
+        if (myIndex === -1) return;
+
+        const fromPlayer = game.state.players[fromPlayerIndex];
+        if (!fromPlayer) return;
+        const fromSocket = io.sockets.sockets.get(fromPlayer.id);
+
+        if (!accepted) {
+            if (fromSocket) fromSocket.emit('seatSwapResult', `${game.state.players[myIndex].name} declined your swap request`);
+            return;
+        }
+
+        game.executeSeatSwap(fromPlayerIndex, myIndex);
+        if (fromSocket) fromSocket.emit('seatSwapResult', `Seat swap with ${game.state.players[myIndex].name} accepted!`);
+        socket.emit('seatSwapResult', `Seat swap with ${fromPlayer.name} accepted!`);
+        broadcastState(roomId, game);
+    });
+
     socket.on('disconnect', () => {
-        // Find what room they were in?
-        // Since socket is d/c, we can't look at rooms easily unless we tracked it.
-        // But typically we don't allow full removal, just mark d/c.
         console.log("Disconnected", socket.id);
     });
 });
@@ -273,7 +356,11 @@ setInterval(() => {
     }
 }, 60 * 1000); // Check every minute
 
+app.get('/{*splat}', (_req, res) => {
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+});
+
 const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+httpServer.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT} (listening on all interfaces)`);
 });

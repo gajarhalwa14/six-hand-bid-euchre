@@ -76,6 +76,12 @@ export interface RoomInfo {
     playerCount: number;
 }
 
+export interface SeatSwapOffer {
+    fromPlayerIndex: number;
+    fromPlayerName: string;
+    toPlayerIndex: number;
+}
+
 export const SUITS: Suit[] = ['Spades', 'Hearts', 'Clubs', 'Diamonds'];
 export const RANKS: Rank[] = ['9', '10', 'J', 'Q', 'K', 'A'];
 
@@ -86,6 +92,8 @@ export interface ServerToClientEvents {
     roomJoined: (roomId: string) => void;
     error: (msg: string) => void;
     roomList: (rooms: RoomInfo[]) => void;
+    seatSwapOffer: (offer: SeatSwapOffer) => void;
+    seatSwapResult: (msg: string) => void;
 }
 
 export interface ClientToServerEvents {
@@ -96,8 +104,11 @@ export interface ClientToServerEvents {
     randomizeSeats: () => void;
     startGame: () => void;
     bid: (bid: Bid) => void;
-    inputPassBid: () => void; // Pass on bidding
+    inputPassBid: () => void;
     playCard: (cardId: string) => void;
-    discardCards: (cardIds: string[]) => void; // For Shooter
-    passCard: (cardId: string) => void; // For Partner
+    discardCards: (cardIds: string[]) => void;
+    passCard: (cardId: string) => void;
+    leaveRoom: () => void;
+    requestSeatSwap: (targetPlayerIndex: number) => void;
+    respondSeatSwap: (fromPlayerIndex: number, accepted: boolean) => void;
 }

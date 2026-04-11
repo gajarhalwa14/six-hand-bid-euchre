@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import type { GameState } from './types';
 import { socket } from './socket';
 import { Lobby } from './components/Lobby';
@@ -7,6 +7,11 @@ import { GameTable } from './components/GameTable';
 function App() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const handleLeaveRoom = useCallback(() => {
+    socket.emit('leaveRoom');
+    setGameState(null);
+  }, []);
 
   useEffect(() => {
     socket.on('gameState', (state) => {
@@ -19,7 +24,6 @@ function App() {
       setTimeout(() => setError(null), 3000);
     });
 
-    // Cleanup
     return () => {
       socket.off('gameState');
       socket.off('error');
@@ -38,7 +42,7 @@ function App() {
       {!gameState ? (
         <Lobby />
       ) : (
-        <GameTable gameState={gameState} myId={socket.id || ''} />
+        <GameTable gameState={gameState} myId={socket.id || ''} onLeave={handleLeaveRoom} />
       )}
     </div>
   );

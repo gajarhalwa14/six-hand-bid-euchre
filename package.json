@@ -1,0 +1,14 @@
+{
+  "name": "six-hand-bid-euchre",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:all": "cd client && npm install && cd ../server && npm install",
+    "build:client": "cd client && npm run build",
+    "build:server": "cd server && npx tsc",
+    "build": "npm run build:client && npm run build:server",
+    "start": "node server/dist/index.js",
+    "dev:server": "cd server && npx nodemon src/index.ts",
+    "dev:client": "cd client && npm run dev"
+  }
+}

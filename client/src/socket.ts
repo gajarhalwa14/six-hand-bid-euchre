@@ -1,10 +1,10 @@
 import { io, Socket } from 'socket.io-client';
 import type { ClientToServerEvents, ServerToClientEvents } from './types';
 
-// Connect to server (proxied or direct)
-// If running dev, vite proxies? Or we just point to localhost:3000
-const URL = 'http://localhost:3000';
+const serverUrl = import.meta.env.DEV
+    ? `${window.location.protocol}//${window.location.hostname}:3000`
+    : window.location.origin;
 
-export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(URL, {
+export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(serverUrl, {
     autoConnect: false
 });
