@@ -357,6 +357,36 @@ setInterval(() => {
     }
 }, 60 * 1000); // Check every minute
 
+app.get('/debug/rooms', (_req, res) => {
+    const data = Array.from(rooms.entries()).map(([roomId, game]) => {
+        const socketRoom = io.sockets.adapter.rooms.get(roomId);
+        return {
+            roomId,
+            isPrivate: game.state.isPrivate,
+            phase: game.state.phase,
+            hostId: game.state.hostId,
+            playerCount: game.state.players.length,
+            connectedSockets: socketRoom ? socketRoom.size : 0,
+            idleSeconds: Math.round((Date.now() - game.lastActivityTime) / 1000),
+            players: game.state.players.map(p => ({
+                name: p.name,
+                id: p.id,
+                team: p.team,
+                seat: p.seatIndex,
+                isBot: p.isBot,
+                isConnected: p.isConnected,
+                socketInRoom: socketRoom ? socketRoom.has(p.id) : false
+            }))
+        };
+    });
+
+    res.json({
+        totalRooms: rooms.size,
+        totalConnectedSockets: io.sockets.sockets.size,
+        rooms: data
+    });
+});
+
 app.get('/{*splat}', (_req, res) => {
     res.sendFile(path.join(clientDistPath, 'index.html'));
 });
