@@ -269,14 +269,30 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                         </div>
                     )}
 
+                    <div className="lobby-player-list">
+                        {gameState.players.map((p) => (
+                            <div key={p.id} className={`lobby-player-item team-${p.team}-badge`}>
+                                <span className="lobby-player-name">
+                                    {p.name} {p.id === myId ? '(You)' : ''} {p.isBot ? '🤖' : ''}
+                                </span>
+                                <span className="lobby-player-team">Team {p.team}</span>
+                            </div>
+                        ))}
+                        {Array.from({ length: 6 - gameState.players.length }).map((_, i) => (
+                            <div key={`empty-${i}`} className="lobby-player-item empty">
+                                <span className="lobby-player-name">Waiting...</span>
+                            </div>
+                        ))}
+                    </div>
+
                     {gameState.isPrivate && gameState.hostId === myId && (
                         <div className="host-controls">
-                            <button className="btn-secondary" onClick={() => socket.emit('randomizeSeats')}>🎲 Randomize Seats</button>
+                            <button className="btn-secondary" onClick={() => socket.emit('randomizeSeats')}>Randomize Seats</button>
                             <button
                                 className="btn-primary"
                                 onClick={() => socket.emit('startGame')}
                             >
-                                🚀 Start Match
+                                Start Match
                             </button>
                         </div>
                     )}

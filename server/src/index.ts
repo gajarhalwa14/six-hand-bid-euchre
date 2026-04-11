@@ -68,6 +68,7 @@ io.on('connection', (socket) => {
 
     socket.on('joinRoom', (roomId, name, isPrivate) => {
         let game = rooms.get(roomId);
+        const isNewRoom = !game;
         if (!game) {
             game = new Game(roomId, isPrivate ?? false);
             game.onStateChange = () => broadcastState(roomId, game!);
@@ -75,19 +76,19 @@ io.on('connection', (socket) => {
         }
 
         try {
-            // Check if rejoining? 
-            const existing = game.state.players.find(p => p.name === name); // Simple name match for persistence
+            const existing = game.state.players.find(p => p.name === name);
             if (existing) {
-                existing.id = socket.id; // Update socket ID
+                existing.id = socket.id;
                 existing.isConnected = true;
+                console.log(`[${roomId}] Player "${name}" rejoined (socket ${socket.id}). Players: ${game.state.players.length}`);
             } else {
                 game.addPlayer(socket.id, name);
+                console.log(`[${roomId}] Player "${name}" joined ${isNewRoom ? '(NEW room)' : '(existing room)'}. Players: ${game.state.players.length}`);
             }
             game.markActivity();
 
             socket.join(roomId);
 
-            // Auto start immediately for public rooms, bots will fill the rest
             if (!game.state.isPrivate && game.state.phase === 'LOBBY') {
                 game.start();
             }

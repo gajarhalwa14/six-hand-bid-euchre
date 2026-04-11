@@ -344,6 +344,51 @@
     font-family: monospace;
 }
 
+/* Lobby Player List */
+.lobby-player-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 20px 0;
+    width: 100%;
+    max-width: 280px;
+}
+
+.lobby-player-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 14px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lobby-player-item.empty {
+    opacity: 0.35;
+    border-style: dashed;
+}
+
+.lobby-player-item.team-A-badge {
+    border-left: 3px solid #90caf9;
+}
+
+.lobby-player-item.team-B-badge {
+    border-left: 3px solid #f48fb1;
+}
+
+.lobby-player-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.lobby-player-team {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
 /* Empty Seat Picker */
 .empty-seat {
     border: 2px dashed rgba(255, 255, 255, 0.3);

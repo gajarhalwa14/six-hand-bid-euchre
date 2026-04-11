@@ -3,7 +3,11 @@ import { socket } from '../socket';
 import type { RoomInfo } from '../types';
 import './Lobby.css';
 
-export const Lobby: React.FC = () => {
+interface LobbyProps {
+    onJoin: (roomId: string, name: string, isPrivate: boolean) => void;
+}
+
+export const Lobby: React.FC<LobbyProps> = ({ onJoin }) => {
     const [name, setName] = useState('');
     const [view, setView] = useState<'main' | 'join_code' | 'public_rooms'>('main');
     const [roomCode, setRoomCode] = useState('');
@@ -11,9 +15,9 @@ export const Lobby: React.FC = () => {
     const [publicRooms, setPublicRooms] = useState<RoomInfo[]>([]);
 
     useEffect(() => {
-        // Server tells us which room we were placed into after a Quick Join
         socket.on('roomJoined', (roomId) => {
             setAssignedRoom(roomId);
+            onJoin(roomId, name.trim(), false);
         });
 
         socket.on('roomList', (rooms: RoomInfo[]) => {
@@ -24,7 +28,7 @@ export const Lobby: React.FC = () => {
             socket.off('roomJoined');
             socket.off('roomList');
         };
-    }, []);
+    }, [name, onJoin]);
 
     const fetchRooms = () => {
         socket.connect();
@@ -32,28 +36,36 @@ export const Lobby: React.FC = () => {
     };
 
     const handleQuickJoin = () => {
-        if (!name) return;
+        if (!name.trim()) return;
+        const trimmedName = name.trim();
         socket.connect();
-        socket.emit('joinRandomRoom', name);
+        socket.emit('joinRandomRoom', trimmedName);
     };
 
     const handleCreatePrivate = () => {
-        if (!name) return;
+        if (!name.trim()) return;
+        const trimmedName = name.trim();
         const newCode = Math.random().toString(36).slice(2, 8).toUpperCase();
         socket.connect();
-        socket.emit('joinRoom', newCode, name, true);
+        onJoin(newCode, trimmedName, true);
+        socket.emit('joinRoom', newCode, trimmedName, true);
     };
 
     const handleJoinWithCode = () => {
-        if (!name || !roomCode) return;
+        if (!name.trim() || !roomCode.trim()) return;
+        const trimmedName = name.trim();
+        const code = roomCode.trim().toUpperCase();
         socket.connect();
-        socket.emit('joinRoom', roomCode.toUpperCase(), name, true);
+        onJoin(code, trimmedName, true);
+        socket.emit('joinRoom', code, trimmedName, true);
     };
 
     const handleJoinSpecificPublicRoom = (roomId: string) => {
-        if (!name) return;
+        if (!name.trim()) return;
+        const trimmedName = name.trim();
         socket.connect();
-        socket.emit('joinRoom', roomId, name, false);
+        onJoin(roomId, trimmedName, false);
+        socket.emit('joinRoom', roomId, trimmedName, false);
     };
 
     const handleOpenPublicRooms = () => {
