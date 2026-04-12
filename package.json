@@ -6,7 +6,7 @@
     "postinstall": "cd client && npm install --include=dev && cd ../server && npm install --include=dev",
     "build:client": "cd client && npm run build",
     "build:server": "cd server && npx tsc",
-    "build": "npm run build:client && npm run build:server --output public",
+    "build": "npm run build:client && npm run build:server",
     "start": "node server/dist/index.js",
     "dev:server": "cd server && npx nodemon src/index.ts",
     "dev:client": "cd client && npm run dev"
