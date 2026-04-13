@@ -17,9 +17,10 @@ export interface Player {
     isConnected: boolean;
     seatIndex?: number; // 0-5. For private lobbies.
     isBot: boolean;
+    avatarId?: string;
 }
 
-export type Phase = 'LOBBY' | 'BIDDING' | 'SHOOT_DISCARD' | 'SHOOT_PASS' | 'TRICK_PLAY' | 'TRICK_END' | 'SCORING' | 'GAME_OVER';
+export type Phase = 'LOBBY' | 'DEALING' | 'BIDDING' | 'SHOOT_DISCARD' | 'SHOOT_PASS' | 'TRICK_PLAY' | 'TRICK_END' | 'SCORING' | 'GAME_OVER';
 
 export type BidType = 'SUIT' | 'HIGH' | 'LOW';
 
@@ -98,8 +99,8 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
-    joinRoom: (roomId: string, name: string, isPrivate?: boolean) => void;
-    joinRandomRoom: (name: string) => void;
+    joinRoom: (roomId: string, name: string, isPrivate?: boolean, avatarId?: string) => void;
+    joinRandomRoom: (name: string, avatarId?: string) => void;
     requestRoomList: () => void;
     chooseSeat: (seatIndex: number) => void;
     randomizeSeats: () => void;
@@ -112,4 +113,6 @@ export interface ClientToServerEvents {
     leaveRoom: () => void;
     requestSeatSwap: (targetPlayerIndex: number) => void;
     respondSeatSwap: (fromPlayerIndex: number, accepted: boolean) => void;
+    takeOverBot: (botIndex: number) => void;
+    playAgain: () => void;
 }

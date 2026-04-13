@@ -1,10 +1,45 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import type { GameState, Card as CardType, SeatSwapOffer } from '../types';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import type { GameState, Card as CardType, SeatSwapOffer, Suit } from '../types';
 import { determineTrickWinner, getEffectiveSuit } from '@shared/CardUtils';
 import { Card } from './Card';
 import { Controls } from './Controls';
+import { DealingAnimation } from './DealingAnimation';
 import { socket } from '../socket';
+import { getAvatarById, BOT_AVATAR } from '../avatars';
+import { DEAL_STEP_MS, DEAL_EVENT_COUNT, cardsDealtToSeat } from '../dealAnimation';
 import './GameTable.css';
+
+const SUIT_SYMBOL: Record<string, string> = {
+    Spades: '♠', Hearts: '♥', Clubs: '♣', Diamonds: '♦'
+};
+
+const SUIT_COLOR: Record<string, string> = {
+    Spades: '#1a1a1a', Hearts: '#cc1111', Clubs: '#1a1a1a', Diamonds: '#cc1111'
+};
+
+const RANK_SORT: Record<string, number> = { 'A': 6, 'K': 5, 'Q': 4, 'J': 3, '10': 2, '9': 1 };
+
+function sortHandCards(cards: CardType[], trump: Suit | null): CardType[] {
+    return [...cards].sort((a, b) => {
+        const suitA = getEffectiveSuit(a, trump);
+        const suitB = getEffectiveSuit(b, trump);
+        if (trump) {
+            const aIsTrump = suitA === trump;
+            const bIsTrump = suitB === trump;
+            if (aIsTrump && !bIsTrump) return -1;
+            if (!aIsTrump && bIsTrump) return 1;
+        }
+        if (suitA !== suitB) return suitA.localeCompare(suitB);
+        const getVisualRank = (c: CardType, effSuit: string) => {
+            if (trump && effSuit === trump && c.rank === 'J') {
+                if (c.suit === trump) return 8;
+                return 7;
+            }
+            return RANK_SORT[c.rank];
+        };
+        return getVisualRank(b, suitB) - getVisualRank(a, suitA);
+    });
+}
 
 interface Props {
     gameState: GameState;
@@ -19,6 +54,41 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
     const [swapOffer, setSwapOffer] = useState<SeatSwapOffer | null>(null);
     const [swapMessage, setSwapMessage] = useState<string | null>(null);
+    const [collectingTrick, setCollectingTrick] = useState(false);
+    const [dealStep, setDealStep] = useState(-1);
+    const prevPhaseRef = useRef(gameState.phase);
+
+    useEffect(() => {
+        setSelectedCardIds([]);
+
+        if (gameState.phase === 'TRICK_END' && prevPhaseRef.current === 'TRICK_PLAY') {
+            const timer = setTimeout(() => setCollectingTrick(true), 800);
+            return () => clearTimeout(timer);
+        } else {
+            setCollectingTrick(false);
+        }
+        prevPhaseRef.current = gameState.phase;
+    }, [gameState.phase]);
+
+    useEffect(() => {
+        if (gameState.phase !== 'DEALING') {
+            setDealStep(-1);
+            return;
+        }
+        setDealStep(-1);
+        let s = 0;
+        const id = window.setInterval(() => {
+            if (s >= DEAL_EVENT_COUNT) {
+                window.clearInterval(id);
+                return;
+            }
+            setDealStep(s);
+            s++;
+        }, DEAL_STEP_MS);
+        return () => window.clearInterval(id);
+    }, [gameState.phase, gameState.dealerIndex, gameState.roomId]);
+
+    const clearSelection = () => setSelectedCardIds([]);
 
     useEffect(() => {
         socket.on('seatSwapOffer', (offer) => setSwapOffer(offer));
@@ -43,41 +113,21 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
         }
     };
 
+    const mySeat = myPlayer?.seatIndex ?? (myIndex >= 0 ? myIndex : -1);
+
     const sortedHand = useMemo(() => {
         if (!myPlayer) return [];
-        const trump = gameState.trump;
-
-        const rankValues: Record<string, number> = { 'A': 6, 'K': 5, 'Q': 4, 'J': 3, '10': 2, '9': 1 };
-
-        return [...myPlayer.hand].sort((a, b) => {
-            const suitA = getEffectiveSuit(a, trump);
-            const suitB = getEffectiveSuit(b, trump);
-
-            // 1. Trump suit first
-            if (trump) {
-                const aIsTrump = suitA === trump;
-                const bIsTrump = suitB === trump;
-                if (aIsTrump && !bIsTrump) return -1;
-                if (!aIsTrump && bIsTrump) return 1;
-            }
-
-            // 2. Group by suit
-            if (suitA !== suitB) {
-                return suitA.localeCompare(suitB);
-            }
-
-            // 3. Sort by rank descending
-            const getVisualRank = (c: CardType, effSuit: string) => {
-                if (trump && effSuit === trump && c.rank === 'J') {
-                    if (c.suit === trump) return 8; // Right Bower
-                    return 7; // Left Bower
-                }
-                return rankValues[c.rank];
-            };
-
-            return getVisualRank(b, suitB) - getVisualRank(a, suitA);
-        });
+        return sortHandCards(myPlayer.hand, gameState.trump);
     }, [myPlayer?.hand, gameState.trump]);
+
+    const dealingVisibleHand = useMemo(() => {
+        if (!myPlayer || gameState.phase !== 'DEALING' || mySeat < 0) return [];
+        const n = cardsDealtToSeat(gameState.dealerIndex, mySeat, dealStep);
+        const slice = myPlayer.hand.slice(0, n);
+        return sortHandCards(slice, null);
+    }, [myPlayer?.hand, gameState.phase, gameState.dealerIndex, mySeat, dealStep]);
+
+    const displayHand = gameState.phase === 'DEALING' ? dealingVisibleHand : sortedHand;
 
     const toggleSelect = (id: string) => {
         if (gameState.phase === 'TRICK_PLAY') {
@@ -140,27 +190,61 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 </div>
             )}
 
-            {/* Info HUD */}
-            <div className="hud top-left-hud">
-                <div>Room Code: <strong>{gameState.roomId}</strong></div>
-                <div>Score Team A: {gameState.scores.A}</div>
-                <div>Score Team B: {gameState.scores.B}</div>
-                <div className="trick-stats">
-                    <div>Tricks A: {tricksA}</div>
-                    <div>Tricks B: {tricksB}</div>
+            {/* Scoreboard + Trump + Room Code - top left */}
+            <div className="hud-panel">
+                <div className="hud-room-row">
+                    <span className="hud-room-label">Room</span>
+                    <span className="hud-room-code">{gameState.roomId}</span>
                 </div>
-                <div className="team-legend">
-                    <div className="legend-item"><div className="legend-color" style={{ background: '#90caf9' }}></div>Team A</div>
-                    <div className="legend-item"><div className="legend-color" style={{ background: '#f48fb1' }}></div>Team B</div>
+
+                <div className="hud-score-row">
+                    <div className="hud-team">
+                        <span className="sb-dot" style={{ background: '#5c9cef' }}></span>
+                        <span className="hud-team-label">A</span>
+                        <span className="hud-team-score">{gameState.scores.A}</span>
+                    </div>
+                    {gameState.phase !== 'LOBBY' && (
+                        <div className="hud-tricks-row">
+                            <span className="hud-trick-num">{tricksA}</span>
+                            <span className="hud-trick-label">tricks</span>
+                            <span className="hud-trick-num">{tricksB}</span>
+                        </div>
+                    )}
+                    <div className="hud-team">
+                        <span className="hud-team-score">{gameState.scores.B}</span>
+                        <span className="hud-team-label">B</span>
+                        <span className="sb-dot" style={{ background: '#e87196' }}></span>
+                    </div>
                 </div>
-                <div>Trump: {gameState.trump || (gameState.winningBid?.type === 'HIGH' ? 'High' : (gameState.winningBid?.type === 'LOW' ? 'Low' : '-'))}</div>
-                {gameState.phase !== 'LOBBY' && gameState.phase !== 'BIDDING' && gameState.winningBid && gameState.declarerIndex !== null && (
-                    <div className="contract-info">
-                        <div>Contract: <strong>{gameState.winningBid.amount} {gameState.winningBid.type === 'SUIT' ? gameState.winningBid.suit : gameState.winningBid.type}</strong></div>
-                        <div>Caller: <strong>Team {gameState.players[gameState.declarerIndex].team}</strong></div>
+
+                {gameState.phase !== 'LOBBY' && (
+                    <div className="hud-trump-row">
+                        <span className="hud-trump-label">Trump</span>
+                        {gameState.trump ? (
+                            <span className="hud-trump-value" style={{ color: SUIT_COLOR[gameState.trump] || '#fff' }}>
+                                {SUIT_SYMBOL[gameState.trump]}
+                            </span>
+                        ) : (
+                            <span className="hud-trump-text">
+                                {gameState.winningBid?.type === 'HIGH' ? 'High' : (gameState.winningBid?.type === 'LOW' ? 'Low' : '—')}
+                            </span>
+                        )}
+                        {gameState.winningBid && gameState.declarerIndex !== null && gameState.phase !== 'BIDDING' && (
+                            <span className="hud-contract-text">
+                                {gameState.winningBid.amount}
+                                {gameState.winningBid.type === 'SUIT' && gameState.winningBid.suit
+                                    ? <span style={{ color: SUIT_COLOR[gameState.winningBid.suit] }}> {SUIT_SYMBOL[gameState.winningBid.suit]}</span>
+                                    : ` ${gameState.winningBid.type}`}
+                            </span>
+                        )}
                     </div>
                 )}
             </div>
+
+            {/* Dealing Animation */}
+            {gameState.phase === 'DEALING' && (
+                <DealingAnimation dealerIndex={gameState.dealerIndex} myIndex={myIndex} currentStep={dealStep} />
+            )}
 
             {/* Players & Seats */}
             {[0, 1, 2, 3, 4, 5].map((seatNum) => {
@@ -191,9 +275,15 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 const teamClass = `team-${p.team}`;
                 const playerBid = gameState.bids.find(b => gameState.players[b.playerIndex]?.id === p.id);
 
-                let bidText = null;
+                let bidText: React.ReactNode = null;
                 if (gameState.phase === 'BIDDING' && playerBid) {
-                    bidText = `${playerBid.amount} ${playerBid.type === 'SUIT' ? playerBid.suit : playerBid.type}`;
+                    if (playerBid.type === 'SUIT' && playerBid.suit) {
+                        const sym = SUIT_SYMBOL[playerBid.suit] || playerBid.suit;
+                        const col = SUIT_COLOR[playerBid.suit] || '#000';
+                        bidText = <>{playerBid.amount} <span style={{ color: col }}>{sym}</span></>;
+                    } else {
+                        bidText = `${playerBid.amount} ${playerBid.type}`;
+                    }
                 }
 
                 const canSwap = gameState.phase !== 'LOBBY'
@@ -204,17 +294,20 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
                 const pIdx = gameState.players.findIndex(pl => pl.id === p.id);
 
+                const avatarDef = p.isBot ? BOT_AVATAR : getAvatarById(p.avatarId);
+
                 return (
                     <div key={p.id} className={`player-seat ${pos} ${isTurn ? 'turn' : ''} ${teamClass}`}>
-                        <div className="avatar">
-                            {p.name} {p.isBot ? '🤖' : ''} <br />({p.team})
+                        <div className="avatar" style={avatarDef ? { background: avatarDef.bg } : undefined}>
+                            <span className="avatar-emoji">{avatarDef ? avatarDef.emoji : p.name.charAt(0).toUpperCase()}</span>
                         </div>
+                        <div className="player-name">{p.name} {p.isBot ? '🤖' : ''}</div>
                         {bidText && <div className="bid-bubble">{bidText}</div>}
-                        {gameState.phase !== 'LOBBY' && <div className="hand-count">{p.hand.length} Cards</div>}
+                        {gameState.phase !== 'LOBBY' && <div className="hand-count">{p.hand.length}</div>}
                         {gameState.declarerIndex !== null && gameState.players[gameState.declarerIndex]?.id === p.id && <div className="badge">Bidder</div>}
                         {canSwap && (
                             <button className="swap-btn" onClick={() => handleSwapRequest(pIdx)}>
-                                Swap Seats
+                                Swap
                             </button>
                         )}
                     </div>
@@ -224,13 +317,22 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             {/* Center Trick */}
             <div className="trick-zone">
                 {gameState.currentTrick.plays.map((play) => {
-                    const relIndex = (play.playerIndex - myIndex + 6) % 6;
+                    const relIndex = (play.playerIndex - (myIndex >= 0 ? myIndex : 0) + 6) % 6;
                     const isWinning = winningPlay && play.playerIndex === winningPlay.playerIndex;
                     const teamClass = gameState.players[play.playerIndex].team === 'A' ? 'team-A' : 'team-B';
 
-                    // Add Winning class if it's the winning card
+                    const winnerIdx = gameState.currentTrick.winnerIndex;
+                    const winnerRel = winnerIdx !== null ? (winnerIdx - (myIndex >= 0 ? myIndex : 0) + 6) % 6 : -1;
+
                     return (
-                        <div key={play.card.id} className={`trick-card pos-${relIndex} ${teamClass} ${isWinning ? 'winning' : ''}`}>
+                        <div
+                            key={play.card.id}
+                            className={`trick-card pos-${relIndex} ${teamClass} ${isWinning ? 'winning' : ''} ${collectingTrick ? 'collecting' : ''}`}
+                            style={collectingTrick && winnerRel >= 0 ? {
+                                '--collect-target': winnerRel,
+                            } as React.CSSProperties : undefined}
+                            data-collect-target={winnerRel}
+                        >
                             <Card card={play.card} />
                         </div>
                     );
@@ -239,7 +341,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
             {/* My Hand */}
             <div className="my-hand">
-                {sortedHand.map((card) => (
+                {displayHand.map((card) => (
                     <Card
                         key={card.id}
                         card={card}
@@ -253,8 +355,67 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
             {/* Controls Overlay */}
             <div className="controls-overlay">
-                <Controls gameState={gameState} myIndex={myIndex} selectedCardIds={selectedCardIds} />
+                <Controls gameState={gameState} myIndex={myIndex} selectedCardIds={selectedCardIds} onAction={clearSelection} />
             </div>
+
+            {/* Game Over Overlay */}
+            {gameState.phase === 'GAME_OVER' && (
+                <div className="game-over-overlay">
+                    <div className="game-over-modal">
+                        <h1 className="game-over-title">Game Over</h1>
+                        <div className="game-over-scores">
+                            <div className={`team-score ${gameState.scores.A >= 32 ? 'winner' : ''}`}>
+                                <span className="team-label">Team A</span>
+                                <span className="team-points">{gameState.scores.A}</span>
+                                {gameState.scores.A >= 32 && <span className="winner-badge">Winner!</span>}
+                            </div>
+                            <div className="vs-divider">vs</div>
+                            <div className={`team-score ${gameState.scores.B >= 32 ? 'winner' : ''}`}>
+                                <span className="team-label">Team B</span>
+                                <span className="team-points">{gameState.scores.B}</span>
+                                {gameState.scores.B >= 32 && <span className="winner-badge">Winner!</span>}
+                            </div>
+                        </div>
+                        <div className="game-over-actions">
+                            <button className="btn-primary play-again-btn" onClick={() => socket.emit('playAgain')}>
+                                Play Again
+                            </button>
+                            <button className="btn-secondary leave-btn" onClick={onLeave}>
+                                Leave Game
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Bot Takeover Overlay */}
+            {gameState.phase !== 'LOBBY' && gameState.phase !== 'GAME_OVER' && myIndex === -1 && (
+                <div className="bot-takeover-overlay">
+                    <div className="bot-takeover-modal">
+                        <h2>Game In Progress</h2>
+                        <p>Select a bot to take their seat:</p>
+                        <div className="bot-list">
+                            {gameState.players.map((p, i) =>
+                                p.isBot ? (
+                                    <button key={p.id} className={`bot-option team-${p.team}-badge`} onClick={() => {
+                                        console.log('[takeOverBot] Emitting for index', i, 'socket connected:', socket.connected);
+                                        if (!socket.connected) {
+                                            socket.connect();
+                                        }
+                                        socket.emit('takeOverBot', i);
+                                    }}>
+                                        <span className="bot-seat-info">Seat {(p.seatIndex ?? i) + 1} - Team {p.team}</span>
+                                        <span className="bot-name">{p.name}</span>
+                                    </button>
+                                ) : null
+                            )}
+                        </div>
+                        <button className="btn-secondary" onClick={onLeave} style={{ marginTop: '16px' }}>
+                            Leave
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Lobby Waiting Overlay */}
             {gameState.phase === 'LOBBY' && (

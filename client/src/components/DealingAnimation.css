@@ -1,0 +1,86 @@
+.dealing-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 200;
+    pointer-events: none;
+}
+
+.dealing-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #ffd700;
+    text-shadow: 0 0 20px rgba(255,215,0,0.4);
+    letter-spacing: 0.08em;
+    z-index: 210;
+    animation: dealLabelPulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes dealLabelPulse {
+    from { opacity: 0.7; transform: translate(-50%, -50%) scale(0.97); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1.03); }
+}
+
+.deal-card-anim {
+    position: absolute;
+    left: 0;
+    top: 0;
+    animation: dealFly 0.35s ease-out forwards;
+    z-index: 205;
+}
+
+@keyframes dealFly {
+    0% {
+        transform: translate(var(--start-x), var(--start-y)) scale(1);
+        opacity: 1;
+    }
+    80% {
+        opacity: 1;
+    }
+    100% {
+        transform: translate(var(--end-x), var(--end-y)) scale(0.6);
+        opacity: 0;
+    }
+}
+
+.deal-card-face {
+    width: 30px;
+    height: 44px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #2563eb, #1e3a8a);
+    border: 1.5px solid rgba(255,255,255,0.2);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+.deal-card-face::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    right: 3px;
+    bottom: 3px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 2px;
+    background: repeating-linear-gradient(
+        45deg,
+        transparent,
+        transparent 3px,
+        rgba(255,255,255,0.04) 3px,
+        rgba(255,255,255,0.04) 6px
+    );
+}
+
+.deal-card-face.second {
+    top: 3px;
+    left: 5px;
+    z-index: -1;
+}

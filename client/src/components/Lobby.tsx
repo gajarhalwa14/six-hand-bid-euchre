@@ -1,14 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { socket } from '../socket';
 import type { RoomInfo } from '../types';
+import AVATARS from '../avatars';
 import './Lobby.css';
 
 interface LobbyProps {
-    onJoin: (roomId: string, name: string, isPrivate: boolean) => void;
+    onJoin: (roomId: string, name: string, isPrivate: boolean, avatarId?: string) => void;
+    defaultName?: string;
+    defaultAvatarId?: string;
+    onLogout?: () => void;
 }
 
-export const Lobby: React.FC<LobbyProps> = ({ onJoin }) => {
-    const [name, setName] = useState('');
+export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatarId, onLogout }) => {
+    const [name, setName] = useState(defaultName || '');
+    const [selectedAvatar, setSelectedAvatar] = useState<string>(defaultAvatarId || AVATARS[0].id);
     const [view, setView] = useState<'main' | 'join_code' | 'public_rooms'>('main');
     const [roomCode, setRoomCode] = useState('');
     const [assignedRoom, setAssignedRoom] = useState<string | null>(null);
@@ -38,35 +43,41 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin }) => {
     const handleQuickJoin = () => {
         if (!name.trim()) return;
         const trimmedName = name.trim();
+        localStorage.setItem('avatarId', selectedAvatar);
         socket.connect();
-        socket.emit('joinRandomRoom', trimmedName);
+        socket.emit('joinRandomRoom', trimmedName, selectedAvatar);
     };
 
     const handleCreatePrivate = () => {
         if (!name.trim()) return;
         const trimmedName = name.trim();
         const newCode = Math.random().toString(36).slice(2, 8).toUpperCase();
+        localStorage.setItem('avatarId', selectedAvatar);
         socket.connect();
-        onJoin(newCode, trimmedName, true);
-        socket.emit('joinRoom', newCode, trimmedName, true);
+        onJoin(newCode, trimmedName, true, selectedAvatar);
+        socket.emit('joinRoom', newCode, trimmedName, true, selectedAvatar);
     };
 
     const handleJoinWithCode = () => {
         if (!name.trim() || !roomCode.trim()) return;
         const trimmedName = name.trim();
         const code = roomCode.trim().toUpperCase();
+        localStorage.setItem('avatarId', selectedAvatar);
         socket.connect();
-        onJoin(code, trimmedName, true);
-        socket.emit('joinRoom', code, trimmedName, true);
+        onJoin(code, trimmedName, true, selectedAvatar);
+        socket.emit('joinRoom', code, trimmedName, true, selectedAvatar);
     };
 
     const handleJoinSpecificPublicRoom = (roomId: string) => {
         if (!name.trim()) return;
         const trimmedName = name.trim();
+        localStorage.setItem('avatarId', selectedAvatar);
         socket.connect();
-        onJoin(roomId, trimmedName, false);
-        socket.emit('joinRoom', roomId, trimmedName, false);
+        onJoin(roomId, trimmedName, false, selectedAvatar);
+        socket.emit('joinRoom', roomId, trimmedName, false, selectedAvatar);
     };
+
+    const currentAvatar = AVATARS.find(a => a.id === selectedAvatar) || AVATARS[0];
 
     const handleOpenPublicRooms = () => {
         setView('public_rooms');
@@ -77,6 +88,30 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin }) => {
         <div className="lobby-container">
             <div className="lobby-box">
                 <h1>Six-Hand Bid Euchre</h1>
+
+                {onLogout && (
+                    <button className="logout-btn" onClick={onLogout}>
+                        Log Out
+                    </button>
+                )}
+
+                <div className="avatar-preview" style={{ background: currentAvatar.bg }}>
+                    <span className="avatar-preview-emoji">{currentAvatar.emoji}</span>
+                </div>
+
+                <div className="avatar-grid">
+                    {AVATARS.map(a => (
+                        <button
+                            key={a.id}
+                            className={`avatar-option ${selectedAvatar === a.id ? 'selected' : ''}`}
+                            style={{ background: a.bg }}
+                            onClick={() => setSelectedAvatar(a.id)}
+                            title={a.label}
+                        >
+                            <span>{a.emoji}</span>
+                        </button>
+                    ))}
+                </div>
 
                 <input
                     className="name-input"

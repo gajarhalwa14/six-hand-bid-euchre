@@ -47,4 +47,23 @@ export class Deck {
         }
         return hands;
     }
+
+    /** Two cards at a time to each seat, starting left of dealer (matches client dealing animation). */
+    dealInRotatingPairs(numPlayers: number, cardsPerPlayer: number, dealerSeat: number): Card[][] {
+        if (cardsPerPlayer % 2 !== 0) throw new Error("cardsPerPlayer must be even");
+        if (numPlayers * cardsPerPlayer > this.cards.length) {
+            throw new Error("Not enough cards to deal");
+        }
+        const hands: Card[][] = Array.from({ length: numPlayers }, () => []);
+        let cardIndex = 0;
+        const pairRounds = cardsPerPlayer / 2;
+        for (let r = 0; r < pairRounds; r++) {
+            for (let off = 1; off <= numPlayers; off++) {
+                const seat = (dealerSeat + off) % numPlayers;
+                hands[seat].push(this.cards[cardIndex++]);
+                hands[seat].push(this.cards[cardIndex++]);
+            }
+        }
+        return hands;
+    }
 }

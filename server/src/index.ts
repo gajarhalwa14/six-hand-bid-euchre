@@ -3,11 +3,77 @@ import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
+import bcrypt from 'bcryptjs';
 import { Game } from './game/Game';
 import { ClientToServerEvents, ServerToClientEvents, GameState, Player, RoomInfo } from './types';
 
 const app = express();
 app.use(cors());
+app.use(express.json());
+
+// --- User Storage ---
+interface UserRecord { email: string; passwordHash: string; displayName: string; }
+const USERS_FILE = path.resolve(__dirname, '../../users.json');
+
+function loadUsers(): UserRecord[] {
+    try {
+        if (fs.existsSync(USERS_FILE)) {
+            return JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
+        }
+    } catch { /* ignore corrupt file */ }
+    return [];
+}
+
+function saveUsers(users: UserRecord[]) {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+}
+
+app.post('/api/signup', async (req, res) => {
+    const { email, password, displayName } = req.body;
+    if (!email || !password || !displayName) {
+        res.status(400).json({ error: 'Email, password, and display name are required' });
+        return;
+    }
+    if (password.length < 4) {
+        res.status(400).json({ error: 'Password must be at least 4 characters' });
+        return;
+    }
+
+    const users = loadUsers();
+    if (users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
+        res.status(409).json({ error: 'An account with that email already exists' });
+        return;
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    users.push({ email: email.toLowerCase(), passwordHash, displayName: displayName.trim() });
+    saveUsers(users);
+    res.json({ email: email.toLowerCase(), displayName: displayName.trim() });
+});
+
+app.post('/api/login', async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+        res.status(400).json({ error: 'Email and password are required' });
+        return;
+    }
+
+    const users = loadUsers();
+    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (!user) {
+        res.status(401).json({ error: 'Invalid email or password' });
+        return;
+    }
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) {
+        res.status(401).json({ error: 'Invalid email or password' });
+        return;
+    }
+
+    res.json({ email: user.email, displayName: user.displayName });
+});
 
 const clientDistPath = path.resolve(__dirname, '../../client/dist');
 app.use(express.static(clientDistPath));
@@ -22,6 +88,9 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
 
 // Room Storage
 const rooms = new Map<string, Game>();
+const SERVER_ID = Math.random().toString(36).slice(2, 8).toUpperCase();
+const SERVER_START = new Date().toISOString();
+console.log(`Server instance: ${SERVER_ID} started at ${SERVER_START}`);
 
 // Helper to broadcast sanitized state
 function broadcastState(roomId: string, game: Game) {
@@ -66,7 +135,10 @@ function sanitize(state: GameState, playerId: string): GameState {
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    socket.on('joinRoom', (roomId, name, isPrivate) => {
+    socket.on('joinRoom', (roomId, name, isPrivate, avatarId) => {
+        (socket as any)._playerName = name;
+        (socket as any)._avatarId = avatarId || undefined;
+
         let game = rooms.get(roomId);
         const isNewRoom = !game;
         if (!game) {
@@ -80,9 +152,17 @@ io.on('connection', (socket) => {
             if (existing) {
                 existing.id = socket.id;
                 existing.isConnected = true;
+                if ((socket as any)._avatarId) existing.avatarId = (socket as any)._avatarId;
                 console.log(`[${roomId}] Player "${name}" rejoined (socket ${socket.id}). Players: ${game.state.players.length}`);
+            } else if (game.state.phase !== 'LOBBY') {
+                const hasBots = game.state.players.some(p => p.isBot);
+                if (!hasBots) {
+                    socket.emit('error', 'Game is in progress with no bot seats available');
+                    return;
+                }
+                console.log(`[${roomId}] Player "${name}" joined in-progress game as spectator (can take over a bot)`);
             } else {
-                game.addPlayer(socket.id, name);
+                game.addPlayer(socket.id, name, (socket as any)._avatarId);
                 console.log(`[${roomId}] Player "${name}" joined ${isNewRoom ? '(NEW room)' : '(existing room)'}. Players: ${game.state.players.length}`);
             }
             game.markActivity();
@@ -99,7 +179,9 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('joinRandomRoom', (name) => {
+    socket.on('joinRandomRoom', (name, avatarId) => {
+        (socket as any)._playerName = name;
+        (socket as any)._avatarId = avatarId || undefined;
         // Find a public, LOBBY-phase room with open seats
         let targetRoomId: string | null = null;
         for (const [id, game] of rooms) {
@@ -125,7 +207,7 @@ io.on('connection', (socket) => {
                 existing.id = socket.id; // Update socket ID
                 existing.isConnected = true;
             } else {
-                game.addPlayer(socket.id, name);
+                game.addPlayer(socket.id, name, (socket as any)._avatarId);
             }
             game.markActivity();
 
@@ -185,11 +267,23 @@ io.on('connection', (socket) => {
     };
 
     socket.on('chooseSeat', (seatIndex) => {
-        handleAction(() => {
-            const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
-            const game = rooms.get(roomId!)!;
+        const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
+        if (!roomId) return;
+        const game = rooms.get(roomId);
+        if (!game) return;
+
+        try {
+            const pIndex = game.state.players.findIndex(p => p.id === socket.id);
+            if (pIndex === -1 && game.state.phase === 'LOBBY') {
+                const playerName = (socket as any)._playerName || `Player ${socket.id.slice(0, 4)}`;
+                game.addPlayer(socket.id, playerName);
+            }
+            game.markActivity();
             game.handleChooseSeat(socket.id, seatIndex);
-        });
+            broadcastState(roomId, game);
+        } catch (e: any) {
+            socket.emit('error', e.message);
+        }
     });
 
     socket.on('randomizeSeats', () => {
@@ -337,6 +431,73 @@ io.on('connection', (socket) => {
         broadcastState(roomId, game);
     });
 
+    socket.on('takeOverBot', (botIndex) => {
+        console.log(`[takeOverBot] socket=${socket.id}, botIndex=${botIndex}, rooms=${Array.from(socket.rooms)}`);
+
+        // Find the room - check socket rooms first, fall back to scanning all rooms
+        let roomId = Array.from(socket.rooms).find(r => r !== socket.id);
+
+        if (!roomId) {
+            // Socket isn't in any room - scan all rooms for one with bots
+            for (const [id, g] of rooms) {
+                if (g.state.players[botIndex]?.isBot) {
+                    roomId = id;
+                    socket.join(roomId);
+                    console.log(`[takeOverBot] Socket wasn't in room, force-joined ${roomId}`);
+                    break;
+                }
+            }
+        }
+
+        if (!roomId) {
+            console.log(`[takeOverBot] No room found for socket ${socket.id}`);
+            socket.emit('error', 'Not in a room. Try rejoining.');
+            return;
+        }
+
+        const game = rooms.get(roomId);
+        if (!game) {
+            socket.emit('error', 'Room not found');
+            return;
+        }
+
+        const alreadyPlayer = game.state.players.findIndex(p => p.id === socket.id);
+        if (alreadyPlayer !== -1) {
+            socket.emit('error', 'You are already a player');
+            return;
+        }
+
+        const bot = game.state.players[botIndex];
+        if (!bot) {
+            socket.emit('error', `No player at index ${botIndex}`);
+            return;
+        }
+        if (!bot.isBot) {
+            socket.emit('error', `Seat ${botIndex} is not a bot`);
+            return;
+        }
+
+        const nameFromSession = (socket as any)._playerName || `Player ${socket.id.slice(0, 4)}`;
+        bot.id = socket.id;
+        bot.name = nameFromSession;
+        bot.isBot = false;
+        bot.isConnected = true;
+        bot.avatarId = (socket as any)._avatarId || undefined;
+        console.log(`[takeOverBot] SUCCESS: "${nameFromSession}" took seat ${botIndex} in room ${roomId}`);
+        broadcastState(roomId, game);
+    });
+
+    socket.on('playAgain', () => {
+        const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
+        if (!roomId) return;
+        const game = rooms.get(roomId);
+        if (!game) return;
+        if (game.state.phase !== 'GAME_OVER') return;
+
+        game.resetForNewGame();
+        broadcastState(roomId, game);
+    });
+
     socket.on('disconnect', () => {
         console.log("Disconnected", socket.id);
     });
@@ -381,6 +542,8 @@ app.get('/debug/rooms', (_req, res) => {
     });
 
     res.json({
+        serverId: SERVER_ID,
+        serverStart: SERVER_START,
         totalRooms: rooms.size,
         totalConnectedSockets: io.sockets.sockets.size,
         rooms: data

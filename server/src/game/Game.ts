@@ -39,7 +39,7 @@ export class Game {
         this.lastActivityTime = Date.now();
     }
 
-    addPlayer(id: string, name: string): Player | null {
+    addPlayer(id: string, name: string, avatarId?: string): Player | null {
         if (this.state.players.length >= 6) return null;
 
         let seatIndex: number | undefined;
@@ -70,7 +70,7 @@ export class Game {
         const team: TeamId = (seatIndex! % 2 === 0) ? 'A' : 'B';
 
         const player: Player = {
-            id, name, team, hand: [], isConnected: true, seatIndex, isBot: false
+            id, name, team, hand: [], isConnected: true, seatIndex, isBot: false, avatarId
         };
         this.state.players.push(player);
         return player;
@@ -198,10 +198,10 @@ export class Game {
         this.deck.reset();
         this.deck.shuffle();
 
-        const hands = this.deck.deal(6, 8);
+        const hands = this.deck.dealInRotatingPairs(6, 8, this.state.dealerIndex);
         this.state.players.forEach((p, i) => p.hand = hands[i]);
 
-        this.state.phase = 'BIDDING';
+        this.state.phase = 'DEALING';
         this.state.currentBidderIndex = (this.state.dealerIndex + 1) % 6;
         this.state.bids = [];
         this.state.biddingTurnCount = 0;
@@ -209,11 +209,17 @@ export class Game {
         this.state.declarerIndex = null;
         this.state.trump = null;
 
-        // Reset trick state
         this.state.currentTrick = { leadSuit: null, plays: [], winnerIndex: null };
         this.state.tricksHistory = [];
 
-        this.triggerBotTurnIfNeeded();
+        this.onStateChange?.();
+
+        // 4 rounds of 2 cards = ~3.2s animation on client, then move to BIDDING
+        setTimeout(() => {
+            this.state.phase = 'BIDDING';
+            this.onStateChange?.();
+            this.triggerBotTurnIfNeeded();
+        }, 3500);
     }
 
     handleBid(playerIndex: number, bid: Bid | 'PASS') {
@@ -463,6 +469,10 @@ export class Game {
         if (cardIds.length !== 2) throw new Error("Must discard 2");
 
         const p = this.state.players[playerIndex];
+        const handIds = new Set(p.hand.map(c => c.id));
+        for (const id of cardIds) {
+            if (!handIds.has(id)) throw new Error("Card not in hand");
+        }
         p.hand = p.hand.filter(c => !cardIds.includes(c.id));
 
         this.state.phase = 'SHOOT_PASS';
@@ -500,6 +510,30 @@ export class Game {
             this.state.turnIndex = leader;
         }
         this.triggerBotTurnIfNeeded();
+    }
+
+    resetForNewGame() {
+        this.state.phase = 'LOBBY';
+        this.state.scores = { A: 0, B: 0 };
+        this.state.bids = [];
+        this.state.winningBid = null;
+        this.state.declarerIndex = null;
+        this.state.trump = null;
+        this.state.currentTrick = { leadSuit: null, plays: [], winnerIndex: null };
+        this.state.tricksHistory = [];
+        this.state.turnIndex = -1;
+        this.state.currentBidderIndex = -1;
+        this.state.biddingTurnCount = 0;
+        this.state.dealerIndex = -1;
+        this.state.shootDiscardWaitList = [];
+        this.state.shootPassWaitList = [];
+        this.state.players.forEach(p => p.hand = []);
+
+        const humans = this.state.players.filter(p => !p.isBot);
+        this.state.players = humans;
+        if (humans.length > 0) {
+            this.state.hostId = humans[0].id;
+        }
     }
 
     triggerBotTurnIfNeeded() {

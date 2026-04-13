@@ -54,6 +54,47 @@ A real-time multiplayer implementation of Six-Hand Bid Euchre with a modern web 
    - Open 6 tabs to simulate a full game.
    - Join with different names but same Room Code.
 
+## Playing Over the Internet
+
+To play with friends on different networks, use [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) to expose your local server with a public URL. No account or credit card required.
+
+### Setup (one-time)
+```bash
+brew install cloudflared
+```
+
+### Start the game
+1. **Kill any old server on port 3000** (if you get `EADDRINUSE`):
+   ```bash
+   lsof -ti:3000 | xargs kill -9
+   ```
+
+2. **Start the server** (Terminal 1):
+   ```bash
+   cd server
+   npx nodemon src/index.ts
+   ```
+
+3. **Start the tunnel** (Terminal 2):
+   ```bash
+   cloudflared tunnel --url http://localhost:3000
+   ```
+
+3. **Copy the public URL** from the tunnel output — look for a line like:
+   ```
+   INF |  https://random-words-here.trycloudflare.com
+   ```
+
+4. **Share that URL** with your friends. Everyone opens it in their browser, creates or joins a room, and plays.
+
+> The URL changes every time you restart the tunnel. Your laptop must stay on while playing.
+
+### Debug Rooms
+Visit `/debug/rooms` on your public URL to see all active rooms and connected players:
+```
+https://random-words-here.trycloudflare.com/debug/rooms
+```
+
 ## Deployment
 
 ### Production Build

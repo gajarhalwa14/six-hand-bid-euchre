@@ -1,76 +1,369 @@
+/* ---- Panel Base ---- */
 .panel {
-    background: rgba(0, 0, 0, 0.8);
-    padding: 15px;
-    border-radius: 8px;
-    color: white;
+    background: linear-gradient(160deg, rgba(15,25,45,0.92) 0%, rgba(10,15,30,0.95) 100%);
+    padding: 16px 22px;
+    border-radius: 12px;
+    color: #e8e8e8;
     text-align: center;
-    margin-top: 10px;
     pointer-events: auto;
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+    backdrop-filter: blur(12px);
 }
 
+.panel-title {
+    margin: 0 0 14px 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #ffd700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    font-size: 0.9rem;
+}
+
+/* ---- Bidding Panel ---- */
 .bidding-panel {
-    width: 400px;
+    width: 420px;
+    max-width: 95vw;
 }
 
-.row {
-    margin: 10px 0;
+.bid-section {
+    margin-bottom: 12px;
+}
+
+.section-label {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.45);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 6px;
+}
+
+.btn-group {
     display: flex;
+    gap: 4px;
     justify-content: center;
-    gap: 5px;
     flex-wrap: wrap;
 }
 
-.row label {
-    font-weight: bold;
-    margin-right: 10px;
-    align-self: center;
+/* Number buttons */
+.bid-num-btn {
+    width: 38px;
+    height: 34px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.06);
+    color: #ccc;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
 }
 
-button {
-    background: #424242;
-    color: white;
-    border: 1px solid #616161;
+.bid-num-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.bid-num-btn.active {
+    background: linear-gradient(135deg, #ffd700, #f0a500);
+    color: #1a1a1a;
+    border-color: #ffd700;
+    box-shadow: 0 0 10px rgba(255,215,0,0.3);
 }
 
-button.active {
-    background: #ffd700;
-    color: black;
-    border-color: #fff;
+/* Special buttons (Shoot / Alone) */
+.bid-special-btn {
+    height: 34px;
+    padding: 0 14px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.06);
+    color: #ccc;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    transition: all 0.15s ease;
 }
 
-button.pass-btn {
-    background: #d32f2f;
+.bid-special-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.bid-special-btn.active {
+    background: linear-gradient(135deg, #ff6b35, #e64a19);
+    color: #fff;
+    border-color: #ff6b35;
+    box-shadow: 0 0 10px rgba(255,107,53,0.3);
 }
 
-button.bid-btn {
-    background: #388e3c;
-    flex-grow: 1;
+/* Type buttons */
+.bid-type-btn {
+    height: 36px;
+    padding: 0 18px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.06);
+    color: #ccc;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
-.actions {
+.bid-type-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.bid-type-btn.active {
+    background: linear-gradient(135deg, #0077ff, #0055cc);
+    color: #fff;
+    border-color: #0077ff;
+    box-shadow: 0 0 10px rgba(0,119,255,0.25);
+}
+
+.bid-type-btn.active .suit-icon { color: #fff !important; }
+
+.suit-icon {
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+/* Suit selector buttons */
+.suit-group {
+    gap: 8px;
+}
+
+.suit-btn {
+    width: 52px;
+    height: 48px;
+    border: 1.5px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    background: rgba(255,255,255,0.85);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.suit-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.suit-btn.active {
+    border-color: #ffd700;
+    box-shadow: 0 0 12px rgba(255,215,0,0.4), 0 4px 12px rgba(0,0,0,0.3);
+    transform: translateY(-2px);
+}
+
+.suit-btn.active[style*="color: rgb(204, 17, 17)"] { background: linear-gradient(135deg, #cc1111, #a00); }
+.suit-btn.active[style*="color: rgb(26, 26, 26)"] { background: linear-gradient(135deg, #333, #111); }
+.suit-btn.active { background: linear-gradient(135deg, #444, #222); }
+
+.suit-btn-symbol {
+    font-size: 1.8rem;
+    line-height: 1;
+}
+
+/* Action buttons */
+.bid-actions {
     display: flex;
     gap: 10px;
-    margin-top: 20px;
+    margin-top: 16px;
 }
 
-.active-turn {
-    background: #ff9800;
-    /* Orange */
-    color: black;
-    font-weight: bold;
-    animation: pulse 2s infinite;
+.pass-btn {
+    flex: 0 0 auto;
+    padding: 10px 24px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #d32f2f, #b71c1c);
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    transition: all 0.15s ease;
 }
 
-@keyframes pulse {
-    0% {
-        transform: scale(1);
-    }
+.pass-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(211,47,47,0.4);
+}
 
-    50% {
-        transform: scale(1.05);
-    }
+.submit-bid-btn {
+    flex: 1;
+    padding: 10px 24px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #43a047, #2e7d32);
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    transition: all 0.15s ease;
+}
 
-    100% {
-        transform: scale(1);
-    }
+.submit-bid-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(67,160,71,0.4);
+}
+
+/* Current high bar */
+.current-high-bar {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    font-size: 0.8rem;
+    color: rgba(255,255,255,0.5);
+}
+
+.current-high-bar strong {
+    color: #ffd700;
+}
+
+/* ---- Waiting Panel ---- */
+.waiting-panel {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.6);
+}
+
+.waiting-indicator {
+    display: flex;
+    gap: 4px;
+}
+
+.waiting-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.3);
+    animation: waitBounce 1.4s ease-in-out infinite;
+}
+
+.waiting-dot:nth-child(2) { animation-delay: 0.2s; }
+.waiting-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes waitBounce {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(1); }
+    40% { opacity: 1; transform: scale(1.3); }
+}
+
+/* ---- Your Turn Panel ---- */
+.your-turn-panel {
+    background: linear-gradient(135deg, rgba(255,152,0,0.9), rgba(230,81,0,0.9)) !important;
+    color: white;
+    font-weight: 700;
+    font-size: 1rem;
+    letter-spacing: 0.04em;
+    padding: 14px 28px;
+    animation: turnPulse 2s ease-in-out infinite;
+    border: 1px solid rgba(255,215,0,0.4);
+}
+
+@keyframes turnPulse {
+    0%, 100% { box-shadow: 0 0 15px rgba(255,152,0,0.3); }
+    50% { box-shadow: 0 0 30px rgba(255,152,0,0.5); }
+}
+
+.your-turn-panel .lead-suit-hint {
+    margin-top: 8px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    opacity: 0.95;
+    letter-spacing: 0.02em;
+}
+
+.your-turn-panel .lead-suit-hint--lead {
+    font-weight: 600;
+    opacity: 0.9;
+}
+
+.your-turn-panel .lead-suit-symbol {
+    font-weight: 800;
+}
+
+/* ---- Action Panel (discard/pass) ---- */
+.action-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 28px;
+}
+
+.selection-indicator {
+    display: flex;
+    gap: 8px;
+}
+
+.sel-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,215,0,0.4);
+    background: transparent;
+    transition: all 0.2s ease;
+}
+
+.sel-dot.filled {
+    background: #ffd700;
+    border-color: #ffd700;
+    box-shadow: 0 0 8px rgba(255,215,0,0.5);
+}
+
+.confirm-btn {
+    padding: 10px 28px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #43a047, #2e7d32);
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    transition: all 0.15s ease;
+}
+
+.confirm-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(67,160,71,0.4);
+}
+
+.confirm-btn:disabled {
+    background: #444;
+    color: #777;
+    cursor: not-allowed;
+}
+
+/* ---- Bid History ---- */
+.bid-history {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.bid-history-item {
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.55);
+    background: rgba(255,255,255,0.04);
+    padding: 3px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.06);
+}
+
+.bid-history-name {
+    font-weight: 600;
+    color: rgba(255,255,255,0.7);
 }
