@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import bcrypt from 'bcryptjs';
 import { Game } from './game/Game';
-import { ClientToServerEvents, ServerToClientEvents, GameState, Player, RoomInfo } from './types';
+import { ClientToServerEvents, ServerToClientEvents, GameState, Player, RoomInfo, GameMode, ChatMessage } from './types';
 
 const app = express();
 app.use(cors());
@@ -88,6 +88,7 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
 
 // Room Storage
 const rooms = new Map<string, Game>();
+const roomChats = new Map<string, ChatMessage[]>();
 const SERVER_ID = Math.random().toString(36).slice(2, 8).toUpperCase();
 const SERVER_START = new Date().toISOString();
 console.log(`Server instance: ${SERVER_ID} started at ${SERVER_START}`);
@@ -132,19 +133,27 @@ function sanitize(state: GameState, playerId: string): GameState {
     };
 }
 
+function getMaxPlayers(mode: GameMode): number {
+    return mode === 'MEGA_DRAFT' ? 4 : 6;
+}
+
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    socket.on('joinRoom', (roomId, name, isPrivate, avatarId) => {
+    socket.on('joinRoom', (roomId, name, isPrivate, avatarId, gameMode = 'CLASSIC') => {
         (socket as any)._playerName = name;
         (socket as any)._avatarId = avatarId || undefined;
 
         let game = rooms.get(roomId);
         const isNewRoom = !game;
         if (!game) {
-            game = new Game(roomId, isPrivate ?? false);
+            game = new Game(roomId, isPrivate ?? false, gameMode);
             game.onStateChange = () => broadcastState(roomId, game!);
             rooms.set(roomId, game);
+        }
+        if (game.state.gameMode !== gameMode) {
+            socket.emit('error', `Room is running ${game.state.gameMode === 'MEGA_DRAFT' ? 'Mega Draft' : 'Classic'} mode`);
+            return;
         }
 
         try {
@@ -168,6 +177,7 @@ io.on('connection', (socket) => {
             game.markActivity();
 
             socket.join(roomId);
+            socket.emit('chatHistory', roomChats.get(roomId) ?? []);
 
             if (!game.state.isPrivate && game.state.phase === 'LOBBY') {
                 game.start();
@@ -179,13 +189,16 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('joinRandomRoom', (name, avatarId) => {
+    socket.on('joinRandomRoom', (name, avatarId, gameMode = 'CLASSIC') => {
         (socket as any)._playerName = name;
         (socket as any)._avatarId = avatarId || undefined;
         // Find a public, LOBBY-phase room with open seats
         let targetRoomId: string | null = null;
         for (const [id, game] of rooms) {
-            if (!game.state.isPrivate && game.state.phase === 'LOBBY' && game.state.players.length < 6) {
+            if (!game.state.isPrivate
+                && game.state.phase === 'LOBBY'
+                && game.state.gameMode === gameMode
+                && game.state.players.length < getMaxPlayers(game.state.gameMode)) {
                 targetRoomId = id;
                 break;
             }
@@ -194,7 +207,7 @@ io.on('connection', (socket) => {
         // No matching room — create a fresh public one with a random 6-char code
         if (!targetRoomId) {
             targetRoomId = Math.random().toString(36).slice(2, 8).toUpperCase();
-            const newGame = new Game(targetRoomId, false);
+            const newGame = new Game(targetRoomId, false, gameMode);
             newGame.onStateChange = () => broadcastState(targetRoomId!, newGame);
             rooms.set(targetRoomId, newGame);
         }
@@ -212,6 +225,7 @@ io.on('connection', (socket) => {
             game.markActivity();
 
             socket.join(targetRoomId);
+            socket.emit('chatHistory', roomChats.get(targetRoomId) ?? []);
 
             // Tell the client which room they were placed in
             socket.emit('roomJoined', targetRoomId);
@@ -230,10 +244,12 @@ io.on('connection', (socket) => {
     socket.on('requestRoomList', () => {
         const publicRooms: RoomInfo[] = [];
         for (const [id, game] of rooms) {
-            if (!game.state.isPrivate && game.state.phase === 'LOBBY' && game.state.players.length < 6) {
+            if (!game.state.isPrivate && game.state.phase === 'LOBBY' && game.state.players.length < getMaxPlayers(game.state.gameMode)) {
                 publicRooms.push({
                     roomId: id,
-                    playerCount: game.state.players.filter(p => p !== null).length // Assuming players array can have nulls or length just works
+                    playerCount: game.state.players.filter(p => p !== null).length, // Assuming players array can have nulls or length just works
+                    gameMode: game.state.gameMode,
+                    maxPlayers: getMaxPlayers(game.state.gameMode)
                 });
                 if (publicRooms.length >= 5) break;
             }
@@ -336,7 +352,11 @@ io.on('connection', (socket) => {
             const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
             const game = rooms.get(roomId!)!;
             const pIndex = game.state.players.findIndex(p => p.id === socket.id);
-            game.handleShootDiscard(pIndex, cardIds);
+            if (game.state.phase === 'PRE_BID_DISCARD') {
+                game.handlePreBidDiscard(pIndex, cardIds);
+            } else {
+                game.handleShootDiscard(pIndex, cardIds);
+            }
         });
     });
 
@@ -498,6 +518,35 @@ io.on('connection', (socket) => {
         broadcastState(roomId, game);
     });
 
+    socket.on('sendChatMessage', (text) => {
+        const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
+        if (!roomId) return;
+        const game = rooms.get(roomId);
+        if (!game) return;
+
+        const cleanText = (text || '').trim().slice(0, 240);
+        if (!cleanText) return;
+
+        const sender = game.state.players.find(p => p.id === socket.id);
+        const senderName = sender?.name || (socket as any)._playerName || `Player ${socket.id.slice(0, 4)}`;
+
+        const message: ChatMessage = {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            roomId,
+            senderId: socket.id,
+            senderName,
+            text: cleanText,
+            timestamp: Date.now()
+        };
+
+        const history = roomChats.get(roomId) ?? [];
+        history.push(message);
+        if (history.length > 100) history.splice(0, history.length - 100);
+        roomChats.set(roomId, history);
+
+        io.to(roomId).emit('chatMessage', message);
+    });
+
     socket.on('disconnect', () => {
         console.log("Disconnected", socket.id);
     });
@@ -514,6 +563,7 @@ setInterval(() => {
         if (idleTime > 2 * 60 * 60 * 1000 || (!hasHumans && idleTime > 10 * 60 * 1000)) {
             console.log(`Garbage collecting idle room: ${roomId}`);
             rooms.delete(roomId);
+            roomChats.delete(roomId);
         }
     }
 }, 60 * 1000); // Check every minute

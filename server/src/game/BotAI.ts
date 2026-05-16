@@ -102,7 +102,16 @@ export class BotAI {
     static chooseDiscard(state: GameState, playerIndex: number): string[] {
         const player = state.players[playerIndex];
         const hand = [...player.hand].sort((a, b) => this.cardValue(a.rank) - this.cardValue(b.rank));
+        if (state.winningBid?.amount === 11) {
+            return [hand[0].id];
+        }
         return [hand[0].id, hand[1].id];
+    }
+
+    static choosePreBidDiscard(state: GameState, playerIndex: number): string[] {
+        const player = state.players[playerIndex];
+        const hand = [...player.hand].sort((a, b) => this.cardValue(a.rank) - this.cardValue(b.rank));
+        return hand.slice(0, 4).map(c => c.id);
     }
 
     // Shoot Pass: pick lowest card

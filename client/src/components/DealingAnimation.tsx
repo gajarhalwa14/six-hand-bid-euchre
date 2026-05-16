@@ -5,12 +5,15 @@ interface Props {
     dealerIndex: number;
     myIndex: number;
     currentStep: number;
+    playerCount: number;
 }
 
 const POSITIONS = ['bottom', 'bottom-left', 'top-left', 'top', 'top-right', 'bottom-right'];
 
 const POS_COORDS: Record<string, { x: number; y: number }> = {
     'bottom':       { x: 50,  y: 85 },
+    'left':         { x: 8,   y: 50 },
+    'right':        { x: 92,  y: 50 },
     'bottom-left':  { x: 12,  y: 72 },
     'top-left':     { x: 12,  y: 22 },
     'top':          { x: 50,  y: 8  },
@@ -24,21 +27,22 @@ interface DealEvent {
     pairIndex: number;
 }
 
-export const DealingAnimation: React.FC<Props> = ({ dealerIndex, myIndex, currentStep }) => {
+export const DealingAnimation: React.FC<Props> = ({ dealerIndex, myIndex, currentStep, playerCount }) => {
     const events = useMemo(() => {
         const allEvents: DealEvent[] = [];
-        for (let round = 0; round < 4; round++) {
-            for (let i = 1; i <= 6; i++) {
-                const targetSeat = (dealerIndex + i) % 6;
+        const pairRounds = playerCount === 4 ? 6 : 4;
+        for (let round = 0; round < pairRounds; round++) {
+            for (let i = 1; i <= playerCount; i++) {
+                const targetSeat = (dealerIndex + i) % playerCount;
                 allEvents.push({ targetSeat, round, pairIndex: allEvents.length });
             }
         }
         return allEvents;
-    }, [dealerIndex]);
+    }, [dealerIndex, playerCount]);
 
     const mySeat = myIndex >= 0 ? myIndex : 0;
 
-    const dealerRel = (dealerIndex - mySeat + 6) % 6;
+    const dealerRel = (dealerIndex - mySeat + playerCount) % playerCount;
     const dealerPos = POSITIONS[dealerRel];
     const dealerCoord = POS_COORDS[dealerPos];
 
@@ -48,7 +52,7 @@ export const DealingAnimation: React.FC<Props> = ({ dealerIndex, myIndex, curren
             {events.map((evt, idx) => {
                 if (idx > currentStep) return null;
 
-                const targetRel = (evt.targetSeat - mySeat + 6) % 6;
+                const targetRel = (evt.targetSeat - mySeat + playerCount) % playerCount;
                 const targetPos = POSITIONS[targetRel];
                 const targetCoord = POS_COORDS[targetPos];
 

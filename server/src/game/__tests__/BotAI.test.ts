@@ -5,6 +5,7 @@ import { BotAI } from '../BotAI';
 describe('BotAI', () => {
     const createEmptyState = (): GameState => ({
         roomId: 'test',
+        gameMode: 'CLASSIC',
         isPrivate: false,
         hostId: null,
         players: [],
@@ -13,6 +14,7 @@ describe('BotAI', () => {
         bids: [],
         winningBid: null,
         declarerIndex: null,
+        preBidDiscardWaitList: [],
         shootDiscardWaitList: [],
         shootPassWaitList: [],
         currentTrick: { leadSuit: null, plays: [], winnerIndex: null },

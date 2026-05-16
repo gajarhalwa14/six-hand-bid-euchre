@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import type { GameState, Card as CardType, SeatSwapOffer, Suit } from '../types';
+import type { GameState, Card as CardType, Suit, ChatMessage } from '../types';
 import { determineTrickWinner, getEffectiveSuit } from '@shared/CardUtils';
 import { Card } from './Card';
 import { Controls } from './Controls';
 import { DealingAnimation } from './DealingAnimation';
 import { socket } from '../socket';
 import { getAvatarById, BOT_AVATAR } from '../avatars';
-import { DEAL_STEP_MS, DEAL_EVENT_COUNT, cardsDealtToSeat } from '../dealAnimation';
+import { DEAL_STEP_MS, getDealEventCount, cardsDealtToSeat } from '../dealAnimation';
 import './GameTable.css';
 
 const SUIT_SYMBOL: Record<string, string> = {
@@ -48,14 +48,26 @@ interface Props {
 }
 
 export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
+    const playerCount = gameState.gameMode === 'MEGA_DRAFT' ? 4 : 6;
+    const maxDiscardSelection = gameState.phase === 'PRE_BID_DISCARD'
+        ? 4
+        : (gameState.phase === 'SHOOT_DISCARD'
+            ? (gameState.winningBid?.amount === 11 ? 1 : 2)
+            : 1);
+
     const myIndex = gameState.players.findIndex(p => p.id === myId);
     const myPlayer = gameState.players[myIndex];
 
     const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
-    const [swapOffer, setSwapOffer] = useState<SeatSwapOffer | null>(null);
-    const [swapMessage, setSwapMessage] = useState<string | null>(null);
     const [collectingTrick, setCollectingTrick] = useState(false);
     const [dealStep, setDealStep] = useState(-1);
+    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+    const [chatInput, setChatInput] = useState('');
+    const [chatMinimized, setChatMinimized] = useState(false);
+    const [chatPos, setChatPos] = useState<{ x: number; y: number }>({ x: 12, y: 52 });
+    const [draggingChat, setDraggingChat] = useState(false);
+    const chatMessagesRef = useRef<HTMLDivElement | null>(null);
+    const dragStartRef = useRef<{ mouseX: number; mouseY: number; startX: number; startY: number } | null>(null);
     const prevPhaseRef = useRef(gameState.phase);
 
     useEffect(() => {
@@ -77,8 +89,9 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
         }
         setDealStep(-1);
         let s = 0;
+        const maxEvents = getDealEventCount(playerCount);
         const id = window.setInterval(() => {
-            if (s >= DEAL_EVENT_COUNT) {
+            if (s >= maxEvents) {
                 window.clearInterval(id);
                 return;
             }
@@ -86,31 +99,70 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             s++;
         }, DEAL_STEP_MS);
         return () => window.clearInterval(id);
-    }, [gameState.phase, gameState.dealerIndex, gameState.roomId]);
+    }, [gameState.phase, gameState.dealerIndex, gameState.roomId, playerCount]);
 
     const clearSelection = () => setSelectedCardIds([]);
 
     useEffect(() => {
-        socket.on('seatSwapOffer', (offer) => setSwapOffer(offer));
-        socket.on('seatSwapResult', (msg) => {
-            setSwapMessage(msg);
-            setTimeout(() => setSwapMessage(null), 3000);
+        socket.on('chatHistory', (messages) => {
+            setChatMessages(messages);
+        });
+        socket.on('chatMessage', (message) => {
+            setChatMessages(prev => [...prev, message]);
         });
         return () => {
-            socket.off('seatSwapOffer');
-            socket.off('seatSwapResult');
+            socket.off('chatHistory');
+            socket.off('chatMessage');
         };
     }, []);
 
-    const handleSwapRequest = (targetIndex: number) => {
-        socket.emit('requestSeatSwap', targetIndex);
+    useEffect(() => {
+        if (chatMessagesRef.current) {
+            chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+        }
+    }, [chatMessages]);
+
+    useEffect(() => {
+        if (!draggingChat) return;
+
+        const onMove = (e: MouseEvent) => {
+            const start = dragStartRef.current;
+            if (!start) return;
+            const dx = e.clientX - start.mouseX;
+            const dy = e.clientY - start.mouseY;
+            setChatPos({ x: Math.max(8, start.startX + dx), y: Math.max(8, start.startY + dy) });
+        };
+
+        const onUp = () => {
+            setDraggingChat(false);
+            dragStartRef.current = null;
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+    }, [draggingChat]);
+
+    const submitChat = (e: React.FormEvent) => {
+        e.preventDefault();
+        const text = chatInput.trim();
+        if (!text) return;
+        socket.emit('sendChatMessage', text);
+        setChatInput('');
     };
 
-    const handleSwapResponse = (accepted: boolean) => {
-        if (swapOffer) {
-            socket.emit('respondSeatSwap', swapOffer.fromPlayerIndex, accepted);
-            setSwapOffer(null);
-        }
+    const onChatHeaderMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        if ((e.target as HTMLElement).closest('.chat-min-btn')) return;
+        dragStartRef.current = {
+            mouseX: e.clientX,
+            mouseY: e.clientY,
+            startX: chatPos.x,
+            startY: chatPos.y
+        };
+        setDraggingChat(true);
     };
 
     const mySeat = myPlayer?.seatIndex ?? (myIndex >= 0 ? myIndex : -1);
@@ -122,10 +174,10 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
     const dealingVisibleHand = useMemo(() => {
         if (!myPlayer || gameState.phase !== 'DEALING' || mySeat < 0) return [];
-        const n = cardsDealtToSeat(gameState.dealerIndex, mySeat, dealStep);
+        const n = cardsDealtToSeat(gameState.dealerIndex, mySeat, dealStep, playerCount);
         const slice = myPlayer.hand.slice(0, n);
         return sortHandCards(slice, null);
-    }, [myPlayer?.hand, gameState.phase, gameState.dealerIndex, mySeat, dealStep]);
+    }, [myPlayer?.hand, gameState.phase, gameState.dealerIndex, mySeat, dealStep, playerCount]);
 
     const displayHand = gameState.phase === 'DEALING' ? dealingVisibleHand : sortedHand;
 
@@ -140,14 +192,16 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
         if (selectedCardIds.includes(id)) {
             setSelectedCardIds(selectedCardIds.filter(x => x !== id));
         } else {
-            const limit = (gameState.phase === 'SHOOT_DISCARD') ? 2 : 1;
+            const limit = maxDiscardSelection;
             if (selectedCardIds.length < limit) {
                 setSelectedCardIds([...selectedCardIds, id]);
             }
         }
     };
 
-    const POSITIONS = ['bottom', 'bottom-left', 'top-left', 'top', 'top-right', 'bottom-right'];
+    const POSITIONS = playerCount === 4
+        ? ['bottom', 'left', 'top', 'right']
+        : ['bottom', 'bottom-left', 'top-left', 'top', 'top-right', 'bottom-right'];
 
     // Calculate Tricks Taken
     const tricksA = gameState.tricksHistory.filter(t => gameState.players[t.winnerIndex!].team === 'A').length;
@@ -171,24 +225,6 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             <button className="back-home-btn" onClick={onLeave}>
                 &larr; Leave Game
             </button>
-
-            {/* Swap notification toast */}
-            {swapMessage && <div className="swap-toast">{swapMessage}</div>}
-
-            {/* Swap offer modal */}
-            {swapOffer && (
-                <div className="swap-offer-overlay">
-                    <div className="swap-offer-modal">
-                        <h3>Seat Swap Request</h3>
-                        <p><strong>{swapOffer.fromPlayerName}</strong> wants to swap seats with you.</p>
-                        <p>You will switch teams if you accept.</p>
-                        <div className="swap-offer-actions">
-                            <button className="btn-accept" onClick={() => handleSwapResponse(true)}>Accept</button>
-                            <button className="btn-decline" onClick={() => handleSwapResponse(false)}>Decline</button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Scoreboard + Trump + Room Code - top left */}
             <div className="hud-panel">
@@ -241,15 +277,57 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 )}
             </div>
 
+            <div
+                className={`chat-panel ${draggingChat ? 'dragging' : ''} ${chatMinimized ? 'minimized' : ''}`}
+                style={{ left: `${chatPos.x}px`, top: `${chatPos.y}px` }}
+            >
+                <div className="chat-header" onMouseDown={onChatHeaderMouseDown}>
+                    <span>Room Chat</span>
+                    <button
+                        className="chat-min-btn"
+                        onClick={() => setChatMinimized(v => !v)}
+                        title={chatMinimized ? 'Expand chat' : 'Minimize chat'}
+                    >
+                        {chatMinimized ? '▢' : '—'}
+                    </button>
+                </div>
+                {!chatMinimized && (
+                    <>
+                        <div className="chat-messages" ref={chatMessagesRef}>
+                            {chatMessages.length === 0 ? (
+                                <div className="chat-empty">No messages yet</div>
+                            ) : (
+                                chatMessages.map((msg) => (
+                                    <div key={msg.id} className={`chat-message ${msg.senderId === myId ? 'mine' : ''}`}>
+                                        <span className="chat-sender">{msg.senderName}:</span>
+                                        <span className="chat-text">{msg.text}</span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        <form className="chat-input-row" onSubmit={submitChat}>
+                            <input
+                                className="chat-input"
+                                value={chatInput}
+                                onChange={(e) => setChatInput(e.target.value)}
+                                maxLength={240}
+                                placeholder="Type a message..."
+                            />
+                            <button className="chat-send-btn" type="submit">Send</button>
+                        </form>
+                    </>
+                )}
+            </div>
+
             {/* Dealing Animation */}
             {gameState.phase === 'DEALING' && (
-                <DealingAnimation dealerIndex={gameState.dealerIndex} myIndex={myIndex} currentStep={dealStep} />
+                <DealingAnimation dealerIndex={gameState.dealerIndex} myIndex={myIndex} currentStep={dealStep} playerCount={playerCount} />
             )}
 
             {/* Players & Seats */}
-            {[0, 1, 2, 3, 4, 5].map((seatNum) => {
+            {Array.from({ length: playerCount }, (_, seatNum) => seatNum).map((seatNum) => {
                 const mySeat = myPlayer?.seatIndex ?? myIndex;
-                const relIndex = (seatNum - mySeat + 6) % 6;
+                const relIndex = (seatNum - mySeat + playerCount) % playerCount;
                 const pos = POSITIONS[relIndex];
 
                 const p = gameState.players.find(pl => pl.seatIndex === seatNum)
@@ -271,7 +349,9 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 }
 
                 // Render occupant
-                const isTurn = gameState.turnIndex !== -1 && gameState.players[gameState.turnIndex]?.id === p.id;
+                const pIdx = gameState.players.findIndex(pl => pl.id === p.id);
+                const isLeadBidder = gameState.phase === 'PRE_BID_DISCARD' && pIdx === gameState.currentBidderIndex;
+                const isTurn = (gameState.turnIndex !== -1 && gameState.players[gameState.turnIndex]?.id === p.id) || isLeadBidder;
                 const teamClass = `team-${p.team}`;
                 const playerBid = gameState.bids.find(b => gameState.players[b.playerIndex]?.id === p.id);
 
@@ -286,14 +366,6 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                     }
                 }
 
-                const canSwap = gameState.phase !== 'LOBBY'
-                    && p.id !== myId
-                    && !p.isBot
-                    && myPlayer
-                    && p.team !== myPlayer.team;
-
-                const pIdx = gameState.players.findIndex(pl => pl.id === p.id);
-
                 const avatarDef = p.isBot ? BOT_AVATAR : getAvatarById(p.avatarId);
 
                 return (
@@ -304,12 +376,8 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                         <div className="player-name">{p.name} {p.isBot ? '🤖' : ''}</div>
                         {bidText && <div className="bid-bubble">{bidText}</div>}
                         {gameState.phase !== 'LOBBY' && <div className="hand-count">{p.hand.length}</div>}
+                        {gameState.phase === 'PRE_BID_DISCARD' && isLeadBidder && <div className="badge">First Bid</div>}
                         {gameState.declarerIndex !== null && gameState.players[gameState.declarerIndex]?.id === p.id && <div className="badge">Bidder</div>}
-                        {canSwap && (
-                            <button className="swap-btn" onClick={() => handleSwapRequest(pIdx)}>
-                                Swap
-                            </button>
-                        )}
                     </div>
                 );
             })}
@@ -317,21 +385,23 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             {/* Center Trick */}
             <div className="trick-zone">
                 {gameState.currentTrick.plays.map((play) => {
-                    const relIndex = (play.playerIndex - (myIndex >= 0 ? myIndex : 0) + 6) % 6;
+                    const relIndex = (play.playerIndex - (myIndex >= 0 ? myIndex : 0) + playerCount) % playerCount;
+                    const trickPosIndex = playerCount === 4 ? [0, 2, 3, 5][relIndex] : relIndex;
                     const isWinning = winningPlay && play.playerIndex === winningPlay.playerIndex;
                     const teamClass = gameState.players[play.playerIndex].team === 'A' ? 'team-A' : 'team-B';
 
                     const winnerIdx = gameState.currentTrick.winnerIndex;
-                    const winnerRel = winnerIdx !== null ? (winnerIdx - (myIndex >= 0 ? myIndex : 0) + 6) % 6 : -1;
+                    const winnerRel = winnerIdx !== null ? (winnerIdx - (myIndex >= 0 ? myIndex : 0) + playerCount) % playerCount : -1;
+                    const collectTarget = winnerRel === -1 ? -1 : (playerCount === 4 ? [0, 2, 3, 5][winnerRel] : winnerRel);
 
                     return (
                         <div
                             key={play.card.id}
-                            className={`trick-card pos-${relIndex} ${teamClass} ${isWinning ? 'winning' : ''} ${collectingTrick ? 'collecting' : ''}`}
+                            className={`trick-card pos-${trickPosIndex} ${teamClass} ${isWinning ? 'winning' : ''} ${collectingTrick ? 'collecting' : ''}`}
                             style={collectingTrick && winnerRel >= 0 ? {
-                                '--collect-target': winnerRel,
+                                '--collect-target': collectTarget,
                             } as React.CSSProperties : undefined}
-                            data-collect-target={winnerRel}
+                            data-collect-target={collectTarget}
                         >
                             <Card card={play.card} />
                         </div>
@@ -364,16 +434,28 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                     <div className="game-over-modal">
                         <h1 className="game-over-title">Game Over</h1>
                         <div className="game-over-scores">
-                            <div className={`team-score ${gameState.scores.A >= 32 ? 'winner' : ''}`}>
+                            <div className={`team-score ${(
+                                gameState.gameMode === 'MEGA_DRAFT'
+                                    ? gameState.scores.A >= 50 || gameState.scores.B <= -100
+                                    : gameState.scores.A >= 32
+                            ) ? 'winner' : ''}`}>
                                 <span className="team-label">Team A</span>
                                 <span className="team-points">{gameState.scores.A}</span>
-                                {gameState.scores.A >= 32 && <span className="winner-badge">Winner!</span>}
+                                {(gameState.gameMode === 'MEGA_DRAFT'
+                                    ? gameState.scores.A >= 50 || gameState.scores.B <= -100
+                                    : gameState.scores.A >= 32) && <span className="winner-badge">Winner!</span>}
                             </div>
                             <div className="vs-divider">vs</div>
-                            <div className={`team-score ${gameState.scores.B >= 32 ? 'winner' : ''}`}>
+                            <div className={`team-score ${(
+                                gameState.gameMode === 'MEGA_DRAFT'
+                                    ? gameState.scores.B >= 50 || gameState.scores.A <= -100
+                                    : gameState.scores.B >= 32
+                            ) ? 'winner' : ''}`}>
                                 <span className="team-label">Team B</span>
                                 <span className="team-points">{gameState.scores.B}</span>
-                                {gameState.scores.B >= 32 && <span className="winner-badge">Winner!</span>}
+                                {(gameState.gameMode === 'MEGA_DRAFT'
+                                    ? gameState.scores.B >= 50 || gameState.scores.A <= -100
+                                    : gameState.scores.B >= 32) && <span className="winner-badge">Winner!</span>}
                             </div>
                         </div>
                         <div className="game-over-actions">
@@ -421,7 +503,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             {gameState.phase === 'LOBBY' && (
                 <div className="lobby-waiting-overlay">
                     <h2>Waiting for Players...</h2>
-                    <p>{gameState.players.length} / 6 joined</p>
+                    <p>{gameState.players.length} / {playerCount} joined</p>
 
                     {gameState.isPrivate && (
                         <div className="room-code-display">
@@ -439,7 +521,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                                 <span className="lobby-player-team">Team {p.team}</span>
                             </div>
                         ))}
-                        {Array.from({ length: 6 - gameState.players.length }).map((_, i) => (
+                        {Array.from({ length: playerCount - gameState.players.length }).map((_, i) => (
                             <div key={`empty-${i}`} className="lobby-player-item empty">
                                 <span className="lobby-player-name">Waiting...</span>
                             </div>

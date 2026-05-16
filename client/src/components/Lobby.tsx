@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { socket } from '../socket';
-import type { RoomInfo } from '../types';
+import type { RoomInfo, GameMode } from '../types';
 import AVATARS from '../avatars';
 import './Lobby.css';
 
 interface LobbyProps {
-    onJoin: (roomId: string, name: string, isPrivate: boolean, avatarId?: string) => void;
+    onJoin: (roomId: string, name: string, isPrivate: boolean, avatarId?: string, gameMode?: GameMode) => void;
     defaultName?: string;
     defaultAvatarId?: string;
     onLogout?: () => void;
@@ -15,6 +15,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
     const [name, setName] = useState(defaultName || '');
     const [selectedAvatar, setSelectedAvatar] = useState<string>(defaultAvatarId || AVATARS[0].id);
     const [view, setView] = useState<'main' | 'join_code' | 'public_rooms'>('main');
+    const [gameMode, setGameMode] = useState<GameMode>('CLASSIC');
     const [roomCode, setRoomCode] = useState('');
     const [assignedRoom, setAssignedRoom] = useState<string | null>(null);
     const [publicRooms, setPublicRooms] = useState<RoomInfo[]>([]);
@@ -22,7 +23,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
     useEffect(() => {
         socket.on('roomJoined', (roomId) => {
             setAssignedRoom(roomId);
-            onJoin(roomId, name.trim(), false);
+            onJoin(roomId, name.trim(), false, selectedAvatar, gameMode);
         });
 
         socket.on('roomList', (rooms: RoomInfo[]) => {
@@ -33,7 +34,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
             socket.off('roomJoined');
             socket.off('roomList');
         };
-    }, [name, onJoin]);
+    }, [name, onJoin, selectedAvatar, gameMode]);
 
     const fetchRooms = () => {
         socket.connect();
@@ -45,7 +46,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
         const trimmedName = name.trim();
         localStorage.setItem('avatarId', selectedAvatar);
         socket.connect();
-        socket.emit('joinRandomRoom', trimmedName, selectedAvatar);
+        socket.emit('joinRandomRoom', trimmedName, selectedAvatar, gameMode);
     };
 
     const handleCreatePrivate = () => {
@@ -54,8 +55,8 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
         const newCode = Math.random().toString(36).slice(2, 8).toUpperCase();
         localStorage.setItem('avatarId', selectedAvatar);
         socket.connect();
-        onJoin(newCode, trimmedName, true, selectedAvatar);
-        socket.emit('joinRoom', newCode, trimmedName, true, selectedAvatar);
+        onJoin(newCode, trimmedName, true, selectedAvatar, gameMode);
+        socket.emit('joinRoom', newCode, trimmedName, true, selectedAvatar, gameMode);
     };
 
     const handleJoinWithCode = () => {
@@ -64,8 +65,8 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
         const code = roomCode.trim().toUpperCase();
         localStorage.setItem('avatarId', selectedAvatar);
         socket.connect();
-        onJoin(code, trimmedName, true, selectedAvatar);
-        socket.emit('joinRoom', code, trimmedName, true, selectedAvatar);
+        onJoin(code, trimmedName, true, selectedAvatar, gameMode);
+        socket.emit('joinRoom', code, trimmedName, true, selectedAvatar, gameMode);
     };
 
     const handleJoinSpecificPublicRoom = (roomId: string) => {
@@ -73,8 +74,8 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
         const trimmedName = name.trim();
         localStorage.setItem('avatarId', selectedAvatar);
         socket.connect();
-        onJoin(roomId, trimmedName, false, selectedAvatar);
-        socket.emit('joinRoom', roomId, trimmedName, false, selectedAvatar);
+        onJoin(roomId, trimmedName, false, selectedAvatar, gameMode);
+        socket.emit('joinRoom', roomId, trimmedName, false, selectedAvatar, gameMode);
     };
 
     const currentAvatar = AVATARS.find(a => a.id === selectedAvatar) || AVATARS[0];
@@ -119,6 +120,21 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
                     value={name}
                     onChange={e => setName(e.target.value)}
                 />
+
+                <div className="mode-picker">
+                    <button
+                        className={`mode-btn ${gameMode === 'CLASSIC' ? 'active' : ''}`}
+                        onClick={() => setGameMode('CLASSIC')}
+                    >
+                        Classic (6P)
+                    </button>
+                    <button
+                        className={`mode-btn ${gameMode === 'MEGA_DRAFT' ? 'active' : ''}`}
+                        onClick={() => setGameMode('MEGA_DRAFT')}
+                    >
+                        Mega Draft (4P)
+                    </button>
+                </div>
 
                 {assignedRoom && (
                     <div className="assigned-room">
@@ -205,7 +221,8 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
                                     <div key={r.roomId} className="room-item">
                                         <div className="room-info">
                                             <span className="room-id">Room {r.roomId}</span>
-                                            <span className="player-count">👥 {r.playerCount}/6 Players</span>
+                                            <span className="player-count">👥 {r.playerCount}/{r.maxPlayers} Players</span>
+                                            <span className="player-count">{r.gameMode === 'MEGA_DRAFT' ? 'Mega Draft' : 'Classic'}</span>
                                         </div>
                                         <button
                                             className="join-room-btn"

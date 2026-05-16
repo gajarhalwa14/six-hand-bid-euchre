@@ -22,6 +22,9 @@ const SUIT_COLOR: Record<Suit, string> = {
 };
 
 export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds, onAction }) => {
+    const isMegaDraft = gameState.gameMode === 'MEGA_DRAFT';
+    const shootDiscardCount = isMegaDraft && gameState.winningBid?.amount === 10 ? 1 : 2;
+
     const [bidAmount, setBidAmount] = useState<number>(3);
     const [bidType, setBidType] = useState<'SUIT' | 'HIGH' | 'LOW'>('SUIT');
     const [bidSuit, setBidSuit] = useState<Suit>('Spades');
@@ -99,11 +102,26 @@ export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds,
                             className={clsx('bid-special-btn', { active: bidAmount === 9 })}
                             disabled={9 < minBid}
                         >Shoot</button>
-                        <button
-                            onClick={() => setBidAmount(10)}
-                            className={clsx('bid-special-btn', { active: bidAmount === 10 })}
-                            disabled={10 < minBid}
-                        >Alone</button>
+                        {isMegaDraft ? (
+                            <>
+                                <button
+                                    onClick={() => setBidAmount(10)}
+                                    className={clsx('bid-special-btn', { active: bidAmount === 10 })}
+                                    disabled={10 < minBid}
+                                >1-Card Shoot</button>
+                                <button
+                                    onClick={() => setBidAmount(11)}
+                                    className={clsx('bid-special-btn', { active: bidAmount === 11 })}
+                                    disabled={11 < minBid}
+                                >Alone</button>
+                            </>
+                        ) : (
+                            <button
+                                onClick={() => setBidAmount(10)}
+                                className={clsx('bid-special-btn', { active: bidAmount === 10 })}
+                                disabled={10 < minBid}
+                            >Alone</button>
+                        )}
                     </div>
                 </div>
 
@@ -148,18 +166,47 @@ export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds,
         );
     }
 
+    if (gameState.phase === 'PRE_BID_DISCARD') {
+        if (gameState.preBidDiscardWaitList.includes(myIndex)) {
+            return (
+                <div className="panel action-panel">
+                    <h3 className="panel-title">Discard 4 Cards</h3>
+                    <div className="selection-indicator">
+                        <div className={clsx('sel-dot', { filled: selectedCardIds.length >= 1 })} />
+                        <div className={clsx('sel-dot', { filled: selectedCardIds.length >= 2 })} />
+                        <div className={clsx('sel-dot', { filled: selectedCardIds.length >= 3 })} />
+                        <div className={clsx('sel-dot', { filled: selectedCardIds.length >= 4 })} />
+                    </div>
+                    <button
+                        className="confirm-btn"
+                        disabled={selectedCardIds.length !== 4}
+                        onClick={() => { socket.emit('discardCards', selectedCardIds); onAction(); }}
+                    >
+                        Confirm Discard
+                    </button>
+                </div>
+            );
+        }
+        return (
+            <div className="panel waiting-panel">
+                <div className="waiting-indicator"><div className="waiting-dot"></div><div className="waiting-dot"></div><div className="waiting-dot"></div></div>
+                <span>Waiting for all players to discard 4 cards</span>
+            </div>
+        );
+    }
+
     if (gameState.phase === 'SHOOT_DISCARD') {
         if (gameState.declarerIndex === myIndex) {
             return (
                 <div className="panel action-panel">
-                    <h3 className="panel-title">Discard 2 Cards</h3>
+                    <h3 className="panel-title">Discard {shootDiscardCount} {shootDiscardCount === 1 ? 'Card' : 'Cards'}</h3>
                     <div className="selection-indicator">
                         <div className={clsx('sel-dot', { filled: selectedCardIds.length >= 1 })} />
-                        <div className={clsx('sel-dot', { filled: selectedCardIds.length >= 2 })} />
+                        {shootDiscardCount === 2 && <div className={clsx('sel-dot', { filled: selectedCardIds.length >= 2 })} />}
                     </div>
                     <button
                         className="confirm-btn"
-                        disabled={selectedCardIds.length !== 2}
+                        disabled={selectedCardIds.length !== shootDiscardCount}
                         onClick={() => { socket.emit('discardCards', selectedCardIds); onAction(); }}
                     >
                         Confirm Discard

@@ -1,4 +1,4 @@
-import { GameState, Player, Card, Bid, Suit, Phase, Trick, TeamId, SUITS, BidType } from '../types';
+import { GameState, Player, Card, Bid, Suit, Phase, Trick, TeamId, SUITS, BidType, GameMode } from '../types';
 import { Deck } from './Deck';
 import { determineTrickWinner, getEffectiveSuit } from './CardUtils';
 import { BotAI } from './BotAI';
@@ -10,17 +10,19 @@ export class Game {
     private botTimeout?: NodeJS.Timeout;
     public lastActivityTime: number;
 
-    constructor(roomId: string, isPrivate: boolean = false) {
+    constructor(roomId: string, isPrivate: boolean = false, gameMode: GameMode = 'CLASSIC') {
         this.deck = new Deck();
         this.lastActivityTime = Date.now();
         this.state = {
             roomId,
+            gameMode,
             players: [],
             phase: 'LOBBY',
             currentBidderIndex: -1,
             bids: [],
             winningBid: null,
             declarerIndex: null,
+            preBidDiscardWaitList: [],
             shootDiscardWaitList: [],
             shootPassWaitList: [],
             currentTrick: { leadSuit: null, plays: [], winnerIndex: null },
@@ -35,18 +37,59 @@ export class Game {
         };
     }
 
+    private getPlayerCount(): number {
+        return this.state.gameMode === 'MEGA_DRAFT' ? 4 : 6;
+    }
+
+    private getCardsPerPlayer(): number {
+        return this.state.gameMode === 'MEGA_DRAFT' ? 12 : 8;
+    }
+
+    private getShootDiscardCount(): number {
+        return this.isOneCardShootBid(this.state.winningBid?.amount) ? 1 : 2;
+    }
+
+    private getShootPassCountPerPartner(): number {
+        if (this.state.gameMode !== 'MEGA_DRAFT') return 1;
+        return this.isOneCardShootBid(this.state.winningBid?.amount) ? 1 : 2;
+    }
+
+    private getHandTrickCount(): number {
+        return 8;
+    }
+
+    private isOneCardShootBid(amount?: number): boolean {
+        return this.state.gameMode === 'MEGA_DRAFT' && amount === 10;
+    }
+
+    private isShootBid(amount?: number): boolean {
+        return amount === 9 || this.isOneCardShootBid(amount);
+    }
+
+    private isLonerBid(amount?: number): boolean {
+        if (this.state.gameMode === 'MEGA_DRAFT') return amount === 11;
+        return amount === 10;
+    }
+
+    private getGameOverReached(): boolean {
+        if (this.state.gameMode === 'MEGA_DRAFT') {
+            return this.state.scores.A >= 50 || this.state.scores.B >= 50 || this.state.scores.A <= -100 || this.state.scores.B <= -100;
+        }
+        return this.state.scores.A >= 32 || this.state.scores.B >= 32;
+    }
+
     markActivity() {
         this.lastActivityTime = Date.now();
     }
 
     addPlayer(id: string, name: string, avatarId?: string): Player | null {
-        if (this.state.players.length >= 6) return null;
+        if (this.state.players.length >= this.getPlayerCount()) return null;
 
         let seatIndex: number | undefined;
         if (this.state.isPrivate) {
             // Find first available seat
             const taken = new Set(this.state.players.map(p => p.seatIndex));
-            for (let i = 0; i < 6; i++) {
+            for (let i = 0; i < this.getPlayerCount(); i++) {
                 if (!taken.has(i)) {
                     seatIndex = i;
                     break;
@@ -57,7 +100,7 @@ export class Game {
             }
         } else {
             // Public room: random assigning
-            const availableSeats = [0, 1, 2, 3, 4, 5].filter(i =>
+            const availableSeats = Array.from({ length: this.getPlayerCount() }, (_, i) => i).filter(i =>
                 !this.state.players.some(p => p.seatIndex === i)
             );
             if (availableSeats.length > 0) {
@@ -100,7 +143,7 @@ export class Game {
 
     handleChooseSeat(playerId: string, targetSeat: number) {
         if (!this.state.isPrivate || this.state.phase !== 'LOBBY') return;
-        if (targetSeat < 0 || targetSeat > 5) return;
+        if (targetSeat < 0 || targetSeat >= this.getPlayerCount()) return;
 
         const player = this.state.players.find(p => p.id === playerId);
         if (!player) return;
@@ -151,7 +194,7 @@ export class Game {
     handleRandomizeSeats(playerId: string) {
         if (!this.state.isPrivate || this.state.phase !== 'LOBBY' || this.state.hostId !== playerId) return;
 
-        const available = [0, 1, 2, 3, 4, 5];
+        const available = Array.from({ length: this.getPlayerCount() }, (_, i) => i);
         for (let i = available.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [available[i], available[j]] = [available[j], available[i]];
@@ -167,7 +210,7 @@ export class Game {
     start() {
         // Fill empty seats with bots
         const takenSeats = new Set(this.state.players.map(p => p.seatIndex));
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < this.getPlayerCount(); i++) {
             if (!takenSeats.has(i)) {
                 const botId = `bot-${Math.random().toString(36).substr(2, 6)}`;
                 const botName = `Bot ${['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta'][i]}`;
@@ -187,22 +230,22 @@ export class Game {
         // Sort players array so index matches seatIndex (important for next-turn logic)
         this.state.players.sort((a, b) => a.seatIndex! - b.seatIndex!);
 
-        this.state.dealerIndex = Math.floor(Math.random() * 6);
+        this.state.dealerIndex = Math.floor(Math.random() * this.getPlayerCount());
         this.state.scores = { A: 0, B: 0 };
         this.nextHand();
         this.triggerBotTurnIfNeeded();
     }
 
     private nextHand() {
-        this.state.dealerIndex = (this.state.dealerIndex + 1) % 6;
+        this.state.dealerIndex = (this.state.dealerIndex + 1) % this.getPlayerCount();
         this.deck.reset();
         this.deck.shuffle();
 
-        const hands = this.deck.dealInRotatingPairs(6, 8, this.state.dealerIndex);
+        const hands = this.deck.dealInRotatingPairs(this.getPlayerCount(), this.getCardsPerPlayer(), this.state.dealerIndex);
         this.state.players.forEach((p, i) => p.hand = hands[i]);
 
         this.state.phase = 'DEALING';
-        this.state.currentBidderIndex = (this.state.dealerIndex + 1) % 6;
+        this.state.currentBidderIndex = (this.state.dealerIndex + 1) % this.getPlayerCount();
         this.state.bids = [];
         this.state.biddingTurnCount = 0;
         this.state.winningBid = null;
@@ -214,9 +257,14 @@ export class Game {
 
         this.onStateChange?.();
 
-        // 4 rounds of 2 cards = ~3.2s animation on client, then move to BIDDING
+        // Deal animation then move to setup phase
         setTimeout(() => {
-            this.state.phase = 'BIDDING';
+            if (this.state.gameMode === 'MEGA_DRAFT') {
+                this.state.phase = 'PRE_BID_DISCARD';
+                this.state.preBidDiscardWaitList = Array.from({ length: this.getPlayerCount() }, (_, i) => i);
+            } else {
+                this.state.phase = 'BIDDING';
+            }
             this.onStateChange?.();
             this.triggerBotTurnIfNeeded();
         }, 3500);
@@ -237,7 +285,7 @@ export class Game {
         this.state.biddingTurnCount++;
         const totalTurns = this.state.biddingTurnCount;
 
-        if (totalTurns === 6 && !this.state.winningBid) {
+        if (totalTurns === this.getPlayerCount() && !this.state.winningBid) {
             // All passed -> Redeal
             this.state.biddingTurnCount = 0;
             this.state.bids = []; // Reset mechanism
@@ -247,16 +295,16 @@ export class Game {
 
         // Check if bidding ends
         // If someone bids Alone (10), end bidding immediately
-        if (bid !== 'PASS' && bid.amount === 10) {
+        if (bid !== 'PASS' && this.isLonerBid(bid.amount)) {
             this.finalizeBid();
             return;
         }
 
         // Single round starting from left of dealer.
-        if (totalTurns === 6) {
+        if (totalTurns === this.getPlayerCount()) {
             this.finalizeBid();
         } else {
-            this.state.currentBidderIndex = (this.state.currentBidderIndex + 1) % 6;
+            this.state.currentBidderIndex = (this.state.currentBidderIndex + 1) % this.getPlayerCount();
             if (bid !== 'PASS') this.state.bids.push(bid); // Record history
         }
 
@@ -297,27 +345,27 @@ export class Game {
         }
 
         // Transition
-        const isShootOrLoner = winningBid.amount === 9 || winningBid.amount === 10;
+        const isShootOrLoner = this.isShootBid(winningBid.amount) || this.isLonerBid(winningBid.amount);
 
-        if (winningBid.amount === 10) { // Alone
+        if (this.isLonerBid(winningBid.amount)) { // Alone
             this.state.phase = 'TRICK_PLAY';
             // Determine leader, skipping teammates if necessary
-            let leader = (this.state.dealerIndex + 1) % 6;
+            let leader = (this.state.dealerIndex + 1) % this.getPlayerCount();
             if (isShootOrLoner) {
                 const declarerTeam = this.state.players[this.state.declarerIndex].team;
                 while (this.state.players[leader].team === declarerTeam && leader !== this.state.declarerIndex) {
-                    leader = (leader + 1) % 6;
+                    leader = (leader + 1) % this.getPlayerCount();
                 }
             }
             this.state.turnIndex = leader;
-        } else if (winningBid.amount === 9) { // Shoot
+        } else if (this.isShootBid(winningBid.amount)) { // Shoot
             this.state.phase = 'SHOOT_DISCARD';
             this.state.shootDiscardWaitList = [this.state.declarerIndex];
         } else {
             this.state.phase = 'TRICK_PLAY';
             // Leader is usually left of dealer, or is it declarer?
             // Standard Euchre: Play starts left of dealer.
-            this.state.turnIndex = (this.state.dealerIndex + 1) % 6;
+            this.state.turnIndex = (this.state.dealerIndex + 1) % this.getPlayerCount();
         }
         this.triggerBotTurnIfNeeded();
     }
@@ -353,24 +401,28 @@ export class Game {
         // Check Trick End
         // Normal: 6 players. Alone/Shoot: 4 players (1 vs 3).
         // If Alone or Shoot, partners don't play.
-        const isAlone = this.state.winningBid?.amount === 10 || this.state.winningBid?.amount === 9;
+        const isAlone = this.state.winningBid
+            ? (this.isLonerBid(this.state.winningBid.amount) || this.isShootBid(this.state.winningBid.amount))
+            : false;
         const declarer = this.state.declarerIndex!;
         const declarerTeam = this.state.players[declarer].team;
 
         // Who acts next?
         // Logic needed for skipping partners in Alone/Shoot mode.
 
-        const expectedPlays = isAlone ? 4 : 6;
+        const expectedPlays = isAlone
+            ? 1 + this.state.players.filter(p => p.team !== declarerTeam).length
+            : this.getPlayerCount();
 
         if (this.state.currentTrick.plays.length === expectedPlays) {
             this.resolveTrick();
         } else {
             // Next player
-            let next = (playerIndex + 1) % 6;
+            let next = (playerIndex + 1) % this.getPlayerCount();
             if (isAlone) {
                 // Skip declarer's partners
                 while (this.state.players[next].team === declarerTeam && next !== declarer) {
-                    next = (next + 1) % 6;
+                    next = (next + 1) % this.getPlayerCount();
                 }
             }
             this.state.turnIndex = next;
@@ -402,7 +454,7 @@ export class Game {
             this.state.turnIndex = winner.playerIndex; // Winner leads
 
             // Check Hand End
-            if (this.state.tricksHistory.length === 8) {
+            if (this.state.tricksHistory.length === this.getHandTrickCount()) {
                 this.scoreHand();
             } else {
                 this.state.phase = 'TRICK_PLAY';
@@ -419,7 +471,9 @@ export class Game {
 
         const winningBid = this.state.winningBid!;
         const declarerTeam = this.state.players[this.state.declarerIndex!].team;
-        const bidAmount = winningBid.amount === 9 ? 8 : (winningBid.amount === 10 ? 8 : winningBid.amount);
+        const bidAmount = this.isShootBid(winningBid.amount) || this.isLonerBid(winningBid.amount)
+            ? this.getHandTrickCount()
+            : winningBid.amount;
 
         const tookTricks = declarerTeam === 'A' ? tricksA : tricksB;
 
@@ -427,19 +481,25 @@ export class Game {
         let points = 0;
         let success = tookTricks >= bidAmount;
 
-        if (winningBid.amount === 9) { // Shoot
-            // Must take ALL 8
-            if (tookTricks === 8) {
+        if (winningBid.amount === 9) { // 2-card shoot
+            if (tookTricks === this.getHandTrickCount()) {
                 this.state.scores[declarerTeam] += 12;
             } else {
-                this.state.scores[declarerTeam] -= 12;
+                this.state.scores[declarerTeam] -= this.state.gameMode === 'MEGA_DRAFT' ? 24 : 12;
                 this.state.scores[declarerTeam === 'A' ? 'B' : 'A'] += (declarerTeam === 'A' ? tricksB : tricksA);
             }
-        } else if (winningBid.amount === 10) { // Alone
-            if (tookTricks === 8) {
+        } else if (this.isOneCardShootBid(winningBid.amount)) { // 1-card shoot (Mega Draft)
+            if (tookTricks === this.getHandTrickCount()) {
+                this.state.scores[declarerTeam] += 18;
+            } else {
+                this.state.scores[declarerTeam] -= 36;
+                this.state.scores[declarerTeam === 'A' ? 'B' : 'A'] += (declarerTeam === 'A' ? tricksB : tricksA);
+            }
+        } else if (this.isLonerBid(winningBid.amount)) { // Alone
+            if (tookTricks === this.getHandTrickCount()) {
                 this.state.scores[declarerTeam] += 24;
             } else {
-                this.state.scores[declarerTeam] -= 24;
+                this.state.scores[declarerTeam] -= this.state.gameMode === 'MEGA_DRAFT' ? 48 : 24;
                 this.state.scores[declarerTeam === 'A' ? 'B' : 'A'] += (declarerTeam === 'A' ? tricksB : tricksA);
             }
         } else {
@@ -455,7 +515,7 @@ export class Game {
         }
 
         // Game Over Check
-        if (this.state.scores.A >= 32 || this.state.scores.B >= 32) {
+        if (this.getGameOverReached()) {
             this.state.phase = 'GAME_OVER';
         } else {
             this.nextHand();
@@ -463,10 +523,31 @@ export class Game {
     }
 
     // Shoot Logic: Discard + Pass
+    handlePreBidDiscard(playerIndex: number, cardIds: string[]) {
+        if (this.state.phase !== 'PRE_BID_DISCARD') throw new Error("Wrong phase");
+        if (!this.state.preBidDiscardWaitList.includes(playerIndex)) throw new Error("Not waiting for you");
+        if (cardIds.length !== 4) throw new Error("Must discard 4");
+
+        const p = this.state.players[playerIndex];
+        const handIds = new Set(p.hand.map(c => c.id));
+        for (const id of cardIds) {
+            if (!handIds.has(id)) throw new Error("Card not in hand");
+        }
+        p.hand = p.hand.filter(c => !cardIds.includes(c.id));
+
+        this.state.preBidDiscardWaitList = this.state.preBidDiscardWaitList.filter(i => i !== playerIndex);
+        if (this.state.preBidDiscardWaitList.length === 0) {
+            this.state.phase = 'BIDDING';
+        }
+        this.triggerBotTurnIfNeeded();
+    }
+
+    // Shoot Logic: Discard + Pass
     handleShootDiscard(playerIndex: number, cardIds: string[]) {
         if (this.state.phase !== 'SHOOT_DISCARD') throw new Error("Wrong phase");
         if (playerIndex !== this.state.declarerIndex) throw new Error("Not shooter");
-        if (cardIds.length !== 2) throw new Error("Must discard 2");
+        const requiredDiscard = this.getShootDiscardCount();
+        if (cardIds.length !== requiredDiscard) throw new Error(`Must discard ${requiredDiscard}`);
 
         const p = this.state.players[playerIndex];
         const handIds = new Set(p.hand.map(c => c.id));
@@ -477,10 +558,12 @@ export class Game {
 
         this.state.phase = 'SHOOT_PASS';
         // Partners need to pass
-        this.state.shootPassWaitList = this.state.players
+        const partners = this.state.players
             .map((pl, i) => ({ pl, i }))
             .filter(({ pl, i }) => pl.team === p.team && i !== playerIndex)
             .map(x => x.i);
+        const copies = this.getShootPassCountPerPartner();
+        this.state.shootPassWaitList = partners.flatMap(i => Array.from({ length: copies }, () => i));
 
         this.triggerBotTurnIfNeeded();
     }
@@ -493,19 +576,22 @@ export class Game {
         const receiver = this.state.players[this.state.declarerIndex!];
 
         const cardIdx = giver.hand.findIndex(c => c.id === cardId);
+        if (cardIdx === -1) throw new Error("Card not in hand");
         const card = giver.hand[cardIdx];
         giver.hand.splice(cardIdx, 1);
         receiver.hand.push(card);
 
-        this.state.shootPassWaitList = this.state.shootPassWaitList.filter(i => i !== playerIndex);
+        const removeIdx = this.state.shootPassWaitList.indexOf(playerIndex);
+        if (removeIdx === -1) throw new Error("Not waiting for you");
+        this.state.shootPassWaitList.splice(removeIdx, 1);
 
         if (this.state.shootPassWaitList.length === 0) {
             this.state.phase = 'TRICK_PLAY';
             // Determine leader, skipping teammates if necessary
-            let leader = (this.state.dealerIndex + 1) % 6;
+            let leader = (this.state.dealerIndex + 1) % this.getPlayerCount();
             const declarerTeam = this.state.players[this.state.declarerIndex!].team;
             while (this.state.players[leader].team === declarerTeam && leader !== this.state.declarerIndex) {
-                leader = (leader + 1) % 6;
+                leader = (leader + 1) % this.getPlayerCount();
             }
             this.state.turnIndex = leader;
         }
@@ -525,6 +611,7 @@ export class Game {
         this.state.currentBidderIndex = -1;
         this.state.biddingTurnCount = 0;
         this.state.dealerIndex = -1;
+        this.state.preBidDiscardWaitList = [];
         this.state.shootDiscardWaitList = [];
         this.state.shootPassWaitList = [];
         this.state.players.forEach(p => p.hand = []);
@@ -541,6 +628,7 @@ export class Game {
 
         let activeIndex = -1;
         if (this.state.phase === 'BIDDING') activeIndex = this.state.currentBidderIndex;
+        else if (this.state.phase === 'PRE_BID_DISCARD') activeIndex = this.state.preBidDiscardWaitList[0] ?? -1;
         else if (this.state.phase === 'TRICK_PLAY') activeIndex = this.state.turnIndex;
         else if (this.state.phase === 'SHOOT_DISCARD') activeIndex = this.state.shootDiscardWaitList[0] ?? -1;
         else if (this.state.phase === 'SHOOT_PASS') activeIndex = this.state.shootPassWaitList[0] ?? -1;
@@ -561,6 +649,9 @@ export class Game {
             if (this.state.phase === 'BIDDING') {
                 const bid = BotAI.calculateBid(this.state, playerIndex);
                 this.handleBid(playerIndex, bid);
+            } else if (this.state.phase === 'PRE_BID_DISCARD') {
+                const cardIds = BotAI.choosePreBidDiscard(this.state, playerIndex);
+                this.handlePreBidDiscard(playerIndex, cardIds);
             } else if (this.state.phase === 'TRICK_PLAY') {
                 const cardId = BotAI.chooseCardToPlay(this.state, playerIndex);
                 this.handleCardPlay(playerIndex, cardId);

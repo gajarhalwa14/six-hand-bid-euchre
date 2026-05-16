@@ -4,16 +4,17 @@ import { socket } from './socket';
 import { Login } from './components/Login';
 import { Lobby } from './components/Lobby';
 import { GameTable } from './components/GameTable';
+import type { GameMode } from './types';
 
-function saveSession(roomId: string, name: string, isPrivate: boolean, avatarId?: string) {
-  sessionStorage.setItem('euchre_session', JSON.stringify({ roomId, name, isPrivate, avatarId }));
+function saveSession(roomId: string, name: string, isPrivate: boolean, avatarId?: string, gameMode: GameMode = 'CLASSIC') {
+  sessionStorage.setItem('euchre_session', JSON.stringify({ roomId, name, isPrivate, avatarId, gameMode }));
 }
 
 function clearSession() {
   sessionStorage.removeItem('euchre_session');
 }
 
-function getSession(): { roomId: string; name: string; isPrivate: boolean; avatarId?: string } | null {
+function getSession(): { roomId: string; name: string; isPrivate: boolean; avatarId?: string; gameMode?: GameMode } | null {
   try {
     const raw = sessionStorage.getItem('euchre_session');
     return raw ? JSON.parse(raw) : null;
@@ -64,7 +65,7 @@ function App() {
     socket.on('connect', () => {
       const session = getSession();
       if (session) {
-        socket.emit('joinRoom', session.roomId, session.name, session.isPrivate, session.avatarId);
+        socket.emit('joinRoom', session.roomId, session.name, session.isPrivate, session.avatarId, session.gameMode || 'CLASSIC');
       }
     });
 

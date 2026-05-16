@@ -8,6 +8,7 @@ export interface Card {
 }
 
 export type TeamId = 'A' | 'B';
+export type GameMode = 'CLASSIC' | 'MEGA_DRAFT';
 
 export interface Player {
     id: string;
@@ -19,7 +20,7 @@ export interface Player {
     isBot: boolean;
 }
 
-export type Phase = 'LOBBY' | 'BIDDING' | 'SHOOT_DISCARD' | 'SHOOT_PASS' | 'TRICK_PLAY' | 'TRICK_END' | 'SCORING' | 'GAME_OVER';
+export type Phase = 'LOBBY' | 'DEALING' | 'PRE_BID_DISCARD' | 'BIDDING' | 'SHOOT_DISCARD' | 'SHOOT_PASS' | 'TRICK_PLAY' | 'TRICK_END' | 'SCORING' | 'GAME_OVER';
 
 export type BidType = 'SUIT' | 'HIGH' | 'LOW';
 
@@ -43,6 +44,7 @@ export interface Trick {
 
 export interface GameState {
     roomId: string;
+    gameMode: GameMode;
     isPrivate: boolean; // Whether the room requires a code to join
     hostId: string | null; // Player ID of the room host
     players: Player[]; // Array of 6 players (or nulls/placeholders)
@@ -55,6 +57,7 @@ export interface GameState {
     declarerIndex: number | null;
 
     // Shooting
+    preBidDiscardWaitList: number[]; // Mega Draft: players who still must discard 4 before bidding
     shootDiscardWaitList: number[]; // Indices of players who need to discard (shooter)
     shootPassWaitList: number[]; // Indices of partners who need to pass
 
@@ -72,6 +75,15 @@ export interface GameState {
     trump: Suit | null; // Can be null if High/Low
 }
 
+export interface ChatMessage {
+    id: string;
+    roomId: string;
+    senderId: string;
+    senderName: string;
+    text: string;
+    timestamp: number;
+}
+
 export const SUITS: Suit[] = ['Spades', 'Hearts', 'Clubs', 'Diamonds'];
 export const RANKS: Rank[] = ['9', '10', 'J', 'Q', 'K', 'A'];
 
@@ -81,11 +93,13 @@ export interface ServerToClientEvents {
     playerJoined: (player: Player) => void;
     roomJoined: (roomId: string) => void;
     error: (msg: string) => void;
+    chatHistory: (messages: ChatMessage[]) => void;
+    chatMessage: (message: ChatMessage) => void;
 }
 
 export interface ClientToServerEvents {
-    joinRoom: (roomId: string, name: string, isPrivate?: boolean) => void;
-    joinRandomRoom: (name: string) => void;
+    joinRoom: (roomId: string, name: string, isPrivate?: boolean, avatarId?: string, gameMode?: GameMode) => void;
+    joinRandomRoom: (name: string, avatarId?: string, gameMode?: GameMode) => void;
     chooseSeat: (seatIndex: number) => void;
     randomizeSeats: () => void;
     startGame: () => void;
@@ -94,4 +108,5 @@ export interface ClientToServerEvents {
     playCard: (cardId: string) => void;
     discardCards: (cardIds: string[]) => void; // For Shooter
     passCard: (cardId: string) => void; // For Partner
+    sendChatMessage: (text: string) => void;
 }
