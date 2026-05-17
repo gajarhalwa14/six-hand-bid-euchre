@@ -1,6 +1,6 @@
 import { GameState, Player, Card, Bid, Suit, Phase, Trick, TeamId, SUITS, BidType, GameMode } from '../types';
 import { Deck } from './Deck';
-import { determineTrickWinner, getEffectiveSuit } from './CardUtils';
+import { determineTrickWinner, getEffectiveSuit, getCardValue } from './CardUtils';
 import { BotAI } from './BotAI';
 
 export class Game {
@@ -566,6 +566,197 @@ export class Game {
         this.state.shootPassWaitList = partners.flatMap(i => Array.from({ length: copies }, () => i));
 
         this.triggerBotTurnIfNeeded();
+    }
+
+    /* ==========================================================
+       TRAM ("The Rest Are Mine")
+       ==========================================================
+       Determines whether a player on lead is guaranteed to win
+       every remaining trick personally, no matter how the
+       opposition plays. Computed via a recursive worst-case
+       simulation. Hands are small (≤ 8) so this is tractable.
+    */
+
+    /**
+     * True if the given player is currently allowed to claim the rest of
+     * the hand. Conditions:
+     *   - Phase is TRICK_PLAY and the current trick is empty (the player
+     *     is on lead).
+     *   - turnIndex points at the player.
+     *   - The player has at least 2 cards (one card just play it).
+     *   - A worst-case simulation shows the player wins every remaining
+     *     trick despite optimal opposition.
+     */
+    canClaimRest(playerIndex: number): boolean {
+        const s = this.state;
+        if (s.phase !== 'TRICK_PLAY') return false;
+        if (s.turnIndex !== playerIndex) return false;
+        if (s.currentTrick.plays.length !== 0) return false;
+        if (!s.winningBid || s.declarerIndex === null) return false;
+
+        const player = s.players[playerIndex];
+        if (!player) return false;
+        if (player.hand.length < 2) return false;
+        // Cap simulation depth — anything deeper is unlikely to be a real claim
+        // anyway and could explode in worst case.
+        if (player.hand.length > 6) return false;
+
+        // Determine which other players actively play tricks, and treat
+        // every one of them as adversarial (worst case for the claimer).
+        const others = this.getActiveOtherSeatIndices(playerIndex);
+        if (others.length === 0) return false;
+
+        const oppHands: Card[][] = others.map(i => [...s.players[i].hand]);
+        const trump = s.trump;
+        const bidType = s.winningBid.type;
+
+        return this.simulateClaim([...player.hand], oppHands, trump, bidType);
+    }
+
+    /** Indices of players (other than `playerIndex`) who still play cards in
+     *  the current hand under shoot/loner rules. In normal bids this is just
+     *  every other player. */
+    private getActiveOtherSeatIndices(playerIndex: number): number[] {
+        const s = this.state;
+        const isShootOrAlone = !!s.winningBid &&
+            (this.isShootBid(s.winningBid.amount) || this.isLonerBid(s.winningBid.amount));
+
+        if (!isShootOrAlone) {
+            return s.players.map((_, i) => i).filter(i => i !== playerIndex);
+        }
+
+        const declarerIndex = s.declarerIndex!;
+        const decTeam = s.players[declarerIndex].team;
+        const myTeam = s.players[playerIndex].team;
+
+        if (myTeam === decTeam) {
+            // Only the declarer plays from this team in shoot/alone. Partners
+            // sit out, so they should never be on lead anyway.
+            if (playerIndex !== declarerIndex) return [];
+            return s.players.map((_, i) => i).filter(i => s.players[i].team !== decTeam);
+        }
+        // Defender: declarer + other defenders are active.
+        return s.players
+            .map((_, i) => i)
+            .filter(i => i !== playerIndex && (i === declarerIndex || s.players[i].team !== decTeam));
+    }
+
+    /** Returns true if the claimer can guarantee winning every remaining
+     *  trick personally given some choice of leads, against the worst-case
+     *  legal play from each opponent. */
+    private simulateClaim(myHand: Card[], oppHands: Card[][], trump: Suit | null, bidType: BidType): boolean {
+        if (myHand.length === 0) return true;
+
+        // Try unique leads. Two cards with the same effective suit and rank
+        // produce identical trick outcomes, so deduplicate.
+        const leadCandidates = this.dedupeLeads(myHand, trump);
+        for (const lead of leadCandidates) {
+            const leadSuit = getEffectiveSuit(lead, trump);
+            if (this.simulateOppPlays(lead, leadSuit, myHand, oppHands, 0, [], trump, bidType)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Recurses across opponents one by one. Returns true iff for EVERY
+     *  legal combination of opponent plays, the lead wins this trick AND
+     *  the rest of the hand can still be claimed. */
+    private simulateOppPlays(
+        lead: Card,
+        leadSuit: Suit,
+        myHand: Card[],
+        oppHands: Card[][],
+        oppIdx: number,
+        playsSoFar: Card[],
+        trump: Suit | null,
+        bidType: BidType
+    ): boolean {
+        if (oppIdx === oppHands.length) {
+            const allPlays = [lead, ...playsSoFar];
+            const winnerIdx = determineTrickWinner(allPlays, leadSuit, trump, bidType);
+            if (winnerIdx !== 0) return false;
+
+            const newMyHand = myHand.filter(c => c.id !== lead.id);
+            const newOppHands = oppHands.map((h, i) =>
+                i < playsSoFar.length ? h.filter(c => c.id !== playsSoFar[i].id) : h
+            );
+            return this.simulateClaim(newMyHand, newOppHands, trump, bidType);
+        }
+
+        const opp = oppHands[oppIdx];
+        if (opp.length === 0) {
+            // Should not happen if hand sizes are consistent, but be safe:
+            return this.simulateOppPlays(lead, leadSuit, myHand, oppHands, oppIdx + 1, playsSoFar, trump, bidType);
+        }
+
+        // Must follow lead (effective) suit if possible.
+        const followCards = opp.filter(c => getEffectiveSuit(c, trump) === leadSuit);
+        const candidates = followCards.length > 0 ? followCards : opp;
+        const unique = this.dedupeResponses(candidates, leadSuit, trump, bidType);
+
+        for (const play of unique) {
+            if (!this.simulateOppPlays(lead, leadSuit, myHand, oppHands, oppIdx + 1, [...playsSoFar, play], trump, bidType)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private dedupeLeads(cards: Card[], trump: Suit | null): Card[] {
+        const seen = new Set<string>();
+        const out: Card[] = [];
+        for (const c of cards) {
+            // Distinguish (effective suit, rank, isLeftBower) — left bower differs
+            // from the natural J of trump in subtle ways but for trick outcomes
+            // they have the same effective suit and a distinct value, so include
+            // suit info so we don't accidentally collapse them.
+            const eff = getEffectiveSuit(c, trump);
+            const key = `${eff}|${c.rank}|${c.suit}`;
+            if (!seen.has(key)) { seen.add(key); out.push(c); }
+        }
+        return out;
+    }
+
+    private dedupeResponses(cards: Card[], leadSuit: Suit, trump: Suit | null, bidType: BidType): Card[] {
+        // Two cards with the same trick value (relative to this lead) are
+        // strategically equivalent for the opponent.
+        const seen = new Set<number>();
+        const out: Card[] = [];
+        for (const c of cards) {
+            const v = getCardValue(c, leadSuit, trump, bidType);
+            if (!seen.has(v)) { seen.add(v); out.push(c); }
+        }
+        return out;
+    }
+
+    /**
+     * Player declares the rest of the hand. All remaining tricks are awarded
+     * to the claimer; the hand immediately moves to scoring. Server validates
+     * eligibility, so a forged claim is rejected with an error.
+     */
+    handleClaimRest(playerIndex: number) {
+        if (!this.canClaimRest(playerIndex)) {
+            throw new Error("You can't claim the rest right now");
+        }
+
+        const remaining = this.getHandTrickCount() - this.state.tricksHistory.length;
+        for (let i = 0; i < remaining; i++) {
+            this.state.tricksHistory.push({
+                leadSuit: null,
+                plays: [],
+                winnerIndex: playerIndex,
+            });
+        }
+
+        // Drain hands so the UI stops showing cards mid-claim.
+        this.state.players.forEach(p => { p.hand = []; });
+        this.state.currentTrick = { leadSuit: null, plays: [], winnerIndex: null };
+        this.state.turnIndex = -1;
+
+        // scoreHand also handles GAME_OVER vs nextHand transition.
+        this.scoreHand();
+        this.onStateChange?.();
     }
 
     handleShootPass(playerIndex: number, cardId: string) {

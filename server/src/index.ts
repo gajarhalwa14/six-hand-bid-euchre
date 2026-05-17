@@ -116,16 +116,21 @@ function broadcastState(roomId: string, game: Game) {
         const playerIndex = game.state.players.findIndex(p => p.id === socketId);
         if (playerIndex === -1) {
             // Spectator? Or just send full state masked
-            socket.emit('gameState', sanitize(game.state, ''));
+            socket.emit('gameState', sanitize(game, ''));
         } else {
-            socket.emit('gameState', sanitize(game.state, socketId));
+            socket.emit('gameState', sanitize(game, socketId));
         }
     }
 }
 
-function sanitize(state: GameState, playerId: string): GameState {
+function sanitize(game: Game, playerId: string): GameState {
+    const state = game.state;
+    const myIdx = state.players.findIndex(p => p.id === playerId);
+    // Only the recipient ever sees their hand and TRAM-eligibility.
+    const canClaimRest = myIdx !== -1 ? game.canClaimRest(myIdx) : false;
     return {
         ...state,
+        canClaimRest,
         players: state.players.map(p => {
             if (p.id === playerId) return p;
             return { ...p, hand: [] }; // Hide other hands
@@ -366,6 +371,15 @@ io.on('connection', (socket) => {
             const game = rooms.get(roomId!)!;
             const pIndex = game.state.players.findIndex(p => p.id === socket.id);
             game.handleShootPass(pIndex, cardId);
+        });
+    });
+
+    socket.on('claimRest', () => {
+        handleAction(() => {
+            const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
+            const game = rooms.get(roomId!)!;
+            const pIndex = game.state.players.findIndex(p => p.id === socket.id);
+            game.handleClaimRest(pIndex);
         });
     });
 
