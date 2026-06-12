@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
-from app.schema import UserCreate, UserPublic, UserUpdate
+import supabase
+from app.schema import GamePublic, UserCreate, UserPublic, GameCreate
 from database import SupabaseDep
 from app.crud import hash_password, verify_password
 import uuid
@@ -41,3 +42,20 @@ def create_user(user_in: UserCreate, supabase: SupabaseDep):
     if not result.data:
         raise HTTPException(status_code=400, detail="Failed to create user")
     return result.data[0]
+
+
+@router.put("/games/{game_id}", response_model=GamePublic)
+def add_game(game_in: GameCreate, supabase: SupabaseDep):
+    game_data = game_in.model_dump()
+    res = supabase.table("games").insert(game_data).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Failed to add game")
+    return res.data[0]
+
+
+@router.get("/games/{game_id}", response_model=GamePublic)
+def get_game(game_id: int, supabase: SupabaseDep):
+    res = supabase.table("games").select("*").eq("game_id", game_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return res.data[0]

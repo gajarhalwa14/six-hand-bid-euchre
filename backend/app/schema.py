@@ -1,7 +1,19 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
+from pydantic import ConfigDict, BaseModel, field_serializer
 from sqlmodel import SQLModel, Field
+from sqlalchemy import DateTime
 from typing import Optional
+
+
+def get_datetime_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class AppModel(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True, json_encoders={datetime: lambda v: v.isoformat()}
+    )
 
 
 class UserBase(SQLModel):
@@ -29,25 +41,41 @@ class UsersPublic(SQLModel):
 
 
 class GameBase(SQLModel):
-    start_time: Optional[datetime] = Field(default=None)
-    end_time: Optional[datetime] = Field(default=None)
+    start_time: datetime | None
+    end_time: datetime | None
     winning_team: int | None = None
     winning_score: int | None = None
     losing_score: int | None = None
     total_hands: int | None = None
+
+    @field_serializer("start_time", "end_time")
+    def serialize_dates(self, dt: datetime) -> str:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt.isoformat()
 
 
 class GameCreate(GameBase):
     pass
 
 
-class GameUpdate(SQLModel):
-    start_time: Optional[datetime] = Field(default=None)
-    end_time: Optional[datetime] = Field(default=None)
+class GameUpdate(AppModel):
+    start_time: datetime | None
+    end_time: datetime | None
     winning_team: int | None = None
     winning_score: int | None = None
     losing_score: int | None = None
     total_hands: int | None = None
+
+    @field_serializer("start_time", "end_time")
+    def serialize_dates(self, dt: datetime) -> str:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt.isoformat()
 
 
 class GamePublic(GameBase):
