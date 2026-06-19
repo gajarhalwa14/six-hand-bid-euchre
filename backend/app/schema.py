@@ -1,19 +1,11 @@
 from datetime import datetime, timezone
 import uuid
-from pydantic import ConfigDict, BaseModel, field_serializer
-from sqlmodel import SQLModel, Field
-from sqlalchemy import DateTime
-from typing import Optional
+from pydantic import field_serializer
+from sqlmodel import Field, SQLModel
 
 
 def get_datetime_utc() -> datetime:
     return datetime.now(timezone.utc)
-
-
-class AppModel(BaseModel):
-    model_config = ConfigDict(
-        from_attributes=True, json_encoders={datetime: lambda v: v.isoformat()}
-    )
 
 
 class UserBase(SQLModel):
@@ -26,9 +18,9 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(SQLModel):
-    password: Optional[str] = Field(min_length=8, max_length=128)
-    display_name: Optional[str] = Field(min_length=1, max_length=64)
-    username: Optional[str] = Field(min_length=1, max_length=255)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+    display_name: str | None = Field(default=None, min_length=1, max_length=64)
+    username: str | None = Field(default=None, min_length=1, max_length=255)
 
 
 class UserPublic(UserBase):
@@ -41,15 +33,17 @@ class UsersPublic(SQLModel):
 
 
 class GameBase(SQLModel):
-    start_time: datetime | None
-    end_time: datetime | None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
     winning_team: int | None = None
     winning_score: int | None = None
     losing_score: int | None = None
     total_hands: int | None = None
 
     @field_serializer("start_time", "end_time")
-    def serialize_dates(self, dt: datetime) -> str:
+    def serialize_dates(self, dt: datetime | None) -> str | None:
+        if dt is None:
+            return None
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         else:
@@ -61,16 +55,18 @@ class GameCreate(GameBase):
     pass
 
 
-class GameUpdate(AppModel):
-    start_time: datetime | None
-    end_time: datetime | None
+class GameUpdate(SQLModel):
+    start_time: datetime | None = None
+    end_time: datetime | None = None
     winning_team: int | None = None
     winning_score: int | None = None
     losing_score: int | None = None
     total_hands: int | None = None
 
     @field_serializer("start_time", "end_time")
-    def serialize_dates(self, dt: datetime) -> str:
+    def serialize_dates(self, dt: datetime | None) -> str | None:
+        if dt is None:
+            return None
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         else:
@@ -89,7 +85,7 @@ class GamesBase(SQLModel):
 
 class GamePlayerBase(SQLModel):
     game_id: int
-    user_id: int
+    user_id: uuid.UUID
     seat_index: int
     team: int
     is_winner: bool
@@ -100,8 +96,11 @@ class GamePlayerCreate(GamePlayerBase):
 
 
 class GamePlayerUpdate(SQLModel):
-    team: int | None
-    is_winner: bool | None
+    game_id: int | None = None
+    user_id: uuid.UUID | None = None
+    seat_index: int | None = None
+    team: int | None = None
+    is_winner: bool | None = None
 
 
 class GamePlayerPublic(GamePlayerBase):
@@ -133,18 +132,18 @@ class HandCreate(HandBase):
 
 
 class HandUpdate(SQLModel):
-    game_id: int | None
-    hand_number: int | None
-    dealer_seat_index: int | None
-    trump_suit: Optional[str] = Field(max_length=32)
-    contract_team_index: int | None
-    contract_value: int | None
-    contract_type: Optional[str] = Field(max_length=32)
-    winning_team_index: int | None
-    tricks_team0: int | None
-    tricks_team1: int | None
-    points_team0: int | None
-    points_team1: int | None
+    game_id: int | None = None
+    hand_number: int | None = None
+    dealer_seat_index: int | None = None
+    trump_suit: str | None = Field(default=None, max_length=32)
+    contract_team_index: int | None = None
+    contract_value: int | None = None
+    contract_type: str | None = Field(default=None, max_length=32)
+    winning_team_index: int | None = None
+    tricks_team0: int | None = None
+    tricks_team1: int | None = None
+    points_team0: int | None = None
+    points_team1: int | None = None
 
 
 class HandPublic(HandBase):

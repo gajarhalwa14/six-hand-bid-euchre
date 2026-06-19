@@ -1,6 +1,6 @@
 -- Create users table
 CREATE TABLE IF NOT EXISTS users (
-  user_id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username VARCHAR(255) NOT NULL UNIQUE,
   hashed_password VARCHAR(255) NOT NULL,
   display_name VARCHAR(255) NOT NULL
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS games (
 CREATE TABLE IF NOT EXISTS game_players (
   id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
   game_id BIGINT NOT NULL,
-  user_id BIGINT NOT NULL,
+  user_id UUID NOT NULL,
   seat_index INT NOT NULL,
   team SMALLINT NOT NULL,
   is_winner BOOLEAN NOT NULL,
