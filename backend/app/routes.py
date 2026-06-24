@@ -2,7 +2,6 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.crud import hash_password
 from app.schema import (
     GameCreate,
     GamePlayerCreate,
@@ -22,8 +21,28 @@ from app.schema import (
     UsersPublic,
 )
 from database import SupabaseDep
+from typing import Annotated
+from fastapi import Depends
+from app.crud import get_current_user, hash_password, login_for_access_token, Token
 
 router = APIRouter()
+
+CurrentUserDep = Annotated[dict, Depends(get_current_user)]
+
+
+def require_game_membership(game_id: int, current_user: dict, supabase: SupabaseDep) -> None:
+    membership = (
+        supabase.table("game_players")
+        .select("id")
+        .eq("game_id", game_id)
+        .eq("user_id", str(current_user["user_id"]))
+        .limit(1)
+        .execute()
+    )
+    if not membership.data:
+        raise HTTPException(
+            status_code=403, detail="You are not allowed to modify this game's data"
+        )
 
 
 @router.get("/")
@@ -67,8 +86,10 @@ def create_user(user_in: UserCreate, supabase: SupabaseDep):
 
 
 @router.patch("/users/{user_id}", response_model=UserPublic)
-def update_user(user_id: uuid.UUID, user_in: UserUpdate, supabase: SupabaseDep):
+def update_user(user_id: uuid.UUID, user_in: UserUpdate, current_user: CurrentUserDep, supabase: SupabaseDep):
     update_data = user_in.model_dump(exclude_unset=True, exclude_none=True, exclude={"password"})
+    if str(current_user["user_id"]) != str(user_id):
+        raise HTTPException(status_code=403, detail="You are not allowed to update this user")
     if user_in.password is not None:
         update_data["hashed_password"] = hash_password(user_in.password)
 
@@ -82,7 +103,9 @@ def update_user(user_id: uuid.UUID, user_in: UserUpdate, supabase: SupabaseDep):
 
 
 @router.delete("/users/{user_id}")
-def delete_user(user_id: uuid.UUID, supabase: SupabaseDep):
+def delete_user(user_id: uuid.UUID, current_user: CurrentUserDep, supabase: SupabaseDep):
+    if str(current_user["user_id"]) != str(user_id):
+        raise HTTPException(status_code=403, detail="You are not allowed to delete this user")
     res = supabase.table("users").delete().eq("user_id", str(user_id)).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="User not found")
@@ -96,7 +119,7 @@ def list_games(supabase: SupabaseDep, limit: int = Query(100, ge=1, le=1000)):
 
 
 @router.post("/games", response_model=GamePublic)
-def add_game(game_in: GameCreate, supabase: SupabaseDep):
+def add_game(game_in: GameCreate, current_user: CurrentUserDep, supabase: SupabaseDep):
     game_data = game_in.model_dump(mode="json", exclude_none=True)
     res = supabase.table("games").insert(game_data).execute()
     if not res.data:
@@ -112,7 +135,8 @@ def get_game(game_id: int, supabase: SupabaseDep):
     return res.data[0]
 
 @router.patch("/games/{game_id}", response_model=GamePublic)
-def update_game(game_id: int, game_in: GameUpdate, supabase: SupabaseDep):
+def update_game(game_id: int, game_in: GameUpdate, current_user: CurrentUserDep, supabase: SupabaseDep):
+    require_game_membership(game_id=game_id, current_user=current_user, supabase=supabase)
     update_data = game_in.model_dump(mode="json", exclude_unset=True, exclude_none=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields provided for update")
@@ -124,7 +148,8 @@ def update_game(game_id: int, game_in: GameUpdate, supabase: SupabaseDep):
 
 
 @router.delete("/games/{game_id}")
-def delete_game(game_id: int, supabase: SupabaseDep):
+def delete_game(game_id: int, current_user: CurrentUserDep, supabase: SupabaseDep):
+    require_game_membership(game_id=game_id, current_user=current_user, supabase=supabase)
     res = supabase.table("games").delete().eq("game_id", game_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Game not found")
@@ -206,7 +231,8 @@ def get_hand(hand_id: int, supabase: SupabaseDep):
 
 
 @router.post("/hands", response_model=HandPublic)
-def create_hand(hand_in: HandCreate, supabase: SupabaseDep):
+def create_hand(hand_in: HandCreate, current_user: CurrentUserDep, supabase: SupabaseDep):
+    require_game_membership(game_id=hand_in.game_id, current_user=current_user, supabase=supabase)
     payload = hand_in.model_dump(mode="json", exclude_none=True)
     res = supabase.table("hands").insert(payload).execute()
     if not res.data:
@@ -215,7 +241,13 @@ def create_hand(hand_in: HandCreate, supabase: SupabaseDep):
 
 
 @router.patch("/hands/{hand_id}", response_model=HandPublic)
-def update_hand(hand_id: int, hand_in: HandUpdate, supabase: SupabaseDep):
+def update_hand(hand_id: int, hand_in: HandUpdate, current_user: CurrentUserDep, supabase: SupabaseDep):
+    hand_lookup = supabase.table("hands").select("game_id").eq("id", hand_id).execute()
+    if not hand_lookup.data:
+        raise HTTPException(status_code=404, detail="Hand not found")
+    require_game_membership(
+        game_id=hand_lookup.data[0]["game_id"], current_user=current_user, supabase=supabase
+    )
     update_data = hand_in.model_dump(mode="json", exclude_unset=True, exclude_none=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields provided for update")
@@ -227,8 +259,18 @@ def update_hand(hand_id: int, hand_in: HandUpdate, supabase: SupabaseDep):
 
 
 @router.delete("/hands/{hand_id}")
-def delete_hand(hand_id: int, supabase: SupabaseDep):
+def delete_hand(hand_id: int, current_user: CurrentUserDep, supabase: SupabaseDep):
+    hand_lookup = supabase.table("hands").select("game_id").eq("id", hand_id).execute()
+    if not hand_lookup.data:
+        raise HTTPException(status_code=404, detail="Hand not found")
+    require_game_membership(
+        game_id=hand_lookup.data[0]["game_id"], current_user=current_user, supabase=supabase
+    )
     res = supabase.table("hands").delete().eq("id", hand_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Hand not found")
     return {"deleted": True, "id": hand_id}
+
+@router.post("/token")
+async def issue_token(token: Annotated[Token, Depends(login_for_access_token)]):
+    return token
