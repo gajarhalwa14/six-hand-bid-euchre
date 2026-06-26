@@ -49,6 +49,13 @@ A real-time multiplayer implementation of Six-Hand Bid Euchre with a modern web 
    npm run dev
    ```
 
+**Start the Backend**
+   ```bash
+   cd backend
+   source .venv/bin/activate
+   uvicorn main:apps
+   ```
+
 3. **Open Browser**
    - Go to `http://localhost:5173` (Vite default).
    - Open 6 tabs to simulate a full game.
