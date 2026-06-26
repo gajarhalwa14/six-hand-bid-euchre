@@ -13,7 +13,8 @@ import type { CapacitorConfig } from '@capacitor/cli';
  *   across platforms when we later add Android.
  *
  * The actual game server URL is NOT configured here — it's set at build
- * time via `VITE_SERVER_URL` and read in `src/socket.ts`. That keeps
+ * time via `VITE_SOCKET_URL` (and `VITE_API_BASE_URL` for the FastAPI
+ * auth backend) and read in `src/socket.ts` / `src/api.ts`. That keeps
  * dev/prod/iOS/web all using the same code path.
  */
 const config: CapacitorConfig = {

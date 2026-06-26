@@ -5,12 +5,14 @@ import type { ClientToServerEvents, ServerToClientEvents } from './types';
  * Resolve the game server URL.
  *
  * Priority (highest first):
- *   1. `VITE_SERVER_URL` env var baked in at build time.
+ *   1. `VITE_SOCKET_URL` env var baked in at build time.
  *      This is what the iOS / Capacitor build uses — the bundled web
  *      app lives at `capacitor://localhost`, which is NOT the server,
  *      so we must point it explicitly at the deployed game backend.
  *      Set it in `client/.env.production` (or via the build command):
- *          VITE_SERVER_URL=https://your-server.example.com npm run build
+ *          VITE_SOCKET_URL=https://your-server.example.com npm run build
+ *
+ *      It's also wired up in `render.yaml` for the deployed web build.
  *
  *   2. Dev mode in the browser: same host, port 3000 (matches the
  *      Vite dev workflow described in README.md).
@@ -22,7 +24,7 @@ import type { ClientToServerEvents, ServerToClientEvents } from './types';
  * which is why the env var must take precedence.
  */
 function resolveServerUrl(): string {
-    const envUrl = import.meta.env.VITE_SERVER_URL as string | undefined;
+    const envUrl = import.meta.env.VITE_SOCKET_URL as string | undefined;
     if (envUrl && envUrl.trim().length > 0) {
         return envUrl.trim();
     }
@@ -32,8 +34,8 @@ function resolveServerUrl(): string {
     // why the app can't connect.
     if (typeof window !== 'undefined' && window.location.protocol === 'capacitor:') {
         console.error(
-            '[socket] Running inside Capacitor but VITE_SERVER_URL is not set. ' +
-            'Build the client with VITE_SERVER_URL=<your server URL> before running cap sync.'
+            '[socket] Running inside Capacitor but VITE_SOCKET_URL is not set. ' +
+            'Build the client with VITE_SOCKET_URL=<your server URL> before running cap sync.'
         );
     }
 

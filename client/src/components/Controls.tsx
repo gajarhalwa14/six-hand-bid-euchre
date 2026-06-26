@@ -255,6 +255,7 @@ export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds,
             return (
                 <div className="panel your-turn-panel">
                     <div>Your Turn — Pick a Card</div>
+                    <div className="lead-suit-hint">Keys: 1-8 or Arrow keys to hover, Enter (or same number) plays</div>
                     {lead ? (
                         <div className="lead-suit-hint">
                             Lead suit:{' '}

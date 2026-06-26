@@ -51,6 +51,13 @@ A real-time multiplayer implementation of Six-Hand Bid Euchre with a modern web 
    npm run dev
    ```
 
+**Start the Backend**
+   ```bash
+   cd backend
+   source .venv/bin/activate
+   uvicorn main:apps
+   ```
+
 3. **Open Browser**
    - Go to `http://localhost:5173` (Vite default).
    - Open 6 tabs to simulate a full game.
@@ -99,24 +106,42 @@ https://random-words-here.trycloudflare.com/debug/rooms
 
 ## Deployment
 
-### Production Build
-1. Build the client:
-   ```bash
-   cd client
-   npm run build
-   ```
-   This creates a `dist` folder.
+This repository is a monorepo. Deploy each app separately by setting a different root directory:
 
-2. Build the server:
-   ```bash
-   cd server
-   npx tsc
-   ```
-   This creates a `dist` folder.
+- `client` -> React frontend (static site)
+- `server` -> Socket.IO realtime server
+- `backend` -> FastAPI REST API
 
-3. Serve:
-   - Configure the server to serve `client/dist` as static files.
-   - START command: `node server/dist/index.js`
+### Deploy with Render Blueprint (`render.yaml`)
+
+The root `render.yaml` defines three services:
+
+1. **six-hand-bid-euchre-client** (`client`, static site)
+2. **six-hand-bid-euchre-server** (`server`, Node web service)
+3. **six-hand-bid-euchre-backend** (`backend`, Python web service)
+
+To deploy:
+
+1. Push this repo to GitHub.
+2. In Render, create a new Blueprint and select this repo.
+3. Fill in required env vars in Render:
+   - **Frontend (`client`)**
+     - `VITE_API_BASE_URL` = your backend URL, e.g. `https://six-hand-bid-euchre-backend.onrender.com`
+     - `VITE_SOCKET_URL` = your realtime server URL, e.g. `https://six-hand-bid-euchre-server.onrender.com`
+   - **Backend (`backend`)**
+     - `SUPABASE_URL`
+     - `SUPABASE_KEY`
+     - `SECRET_KEY`
+     - `ALGORITHM` (defaults to `HS256` in blueprint)
+4. Deploy all services.
+
+### Important post-deploy checks
+
+- Update FastAPI CORS origins to include your deployed frontend URL.
+- Confirm login flow:
+  - `POST /token` returns token
+  - protected endpoints work with `Authorization: Bearer <token>`
+- Confirm frontend connects to realtime server via `VITE_SOCKET_URL`.
 
 ## iOS App 📱
 
@@ -149,7 +174,9 @@ npm run ios:add
 #    The bundled app cannot infer the server from window.location, so this
 #    MUST be set or the iOS app will fail to connect.
 cp .env.example .env.production
-# then edit .env.production and set VITE_SERVER_URL=https://your-server.example.com
+# then edit .env.production:
+#   VITE_SOCKET_URL   = https://six-hand-bid-euchre-server.onrender.com   (realtime game server)
+#   VITE_API_BASE_URL = https://six-hand-bid-euchre-backend.onrender.com  (FastAPI auth backend)
 
 # 4. Build the web app, copy it into the iOS shell, and open Xcode
 npm run ios:build-and-open

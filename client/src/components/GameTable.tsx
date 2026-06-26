@@ -19,6 +19,18 @@ const SUIT_COLOR: Record<string, string> = {
 
 const RANK_SORT: Record<string, number> = { 'A': 6, 'K': 5, 'Q': 4, 'J': 3, '10': 2, '9': 1 };
 
+function isShootBid(gameState: GameState): boolean {
+    const amount = gameState.winningBid?.amount;
+    if (amount === undefined) return false;
+    if (gameState.gameMode === 'MEGA_DRAFT') return amount === 9 || amount === 10;
+    return amount === 9;
+}
+
+function getShootLabel(gameState: GameState): string {
+    if (gameState.gameMode === 'MEGA_DRAFT' && gameState.winningBid?.amount === 10) return '1-Card Shoot';
+    return 'Shoot';
+}
+
 function sortHandCards(cards: CardType[], trump: Suit | null): CardType[] {
     return [...cards].sort((a, b) => {
         const suitA = getEffectiveSuit(a, trump);
@@ -70,6 +82,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     const [draggingChat, setDraggingChat] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
     const [chatFlash, setChatFlash] = useState(false);
+    const [hoveredCardIndex, setHoveredCardIndex] = useState<number | null>(null);
     const chatMessagesRef = useRef<HTMLDivElement | null>(null);
     const chatPanelRef = useRef<HTMLDivElement | null>(null);
     const dragStartRef = useRef<{ pointerX: number; pointerY: number; startX: number; startY: number } | null>(null);
@@ -287,11 +300,83 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     }, [myPlayer?.hand, gameState.phase, gameState.dealerIndex, mySeat, dealStep, playerCount]);
 
     const displayHand = gameState.phase === 'DEALING' ? dealingVisibleHand : sortedHand;
+    const isMyTurnToPlay = gameState.phase === 'TRICK_PLAY' && gameState.turnIndex === myIndex;
+
+    const playCard = (cardId: string) => {
+        socket.emit('playCard', cardId);
+        setSelectedCardIds([]);
+        setHoveredCardIndex(null);
+    };
+
+    useEffect(() => {
+        if (!isMyTurnToPlay || displayHand.length === 0) {
+            setHoveredCardIndex(null);
+            return;
+        }
+        setHoveredCardIndex((prev) => {
+            if (prev === null) return 0;
+            return Math.min(prev, displayHand.length - 1);
+        });
+    }, [displayHand.length, isMyTurnToPlay]);
+
+    useEffect(() => {
+        if (!isMyTurnToPlay) {
+            return;
+        }
+
+        const onKeyDown = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement | null;
+            if (target) {
+                const tag = target.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+            }
+
+            if (e.key === 'Enter') {
+                if (hoveredCardIndex !== null) {
+                    e.preventDefault();
+                    const hoveredCard = displayHand[hoveredCardIndex];
+                    if (hoveredCard) playCard(hoveredCard.id);
+                }
+                return;
+            }
+
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                const step = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -1 : 1;
+                const maxIndex = displayHand.length - 1;
+                if (maxIndex < 0) return;
+                setHoveredCardIndex((prev) => {
+                    if (prev === null) return step > 0 ? 0 : maxIndex;
+                    const next = prev + step;
+                    if (next < 0) return maxIndex;
+                    if (next > maxIndex) return 0;
+                    return next;
+                });
+                return;
+            }
+
+            const keyNumber = Number(e.key);
+            if (!Number.isInteger(keyNumber) || keyNumber < 1 || keyNumber > 8) return;
+
+            const card = displayHand[keyNumber - 1];
+            if (!card) return;
+
+            e.preventDefault();
+            if (hoveredCardIndex === keyNumber - 1) {
+                playCard(card.id);
+            } else {
+                setHoveredCardIndex(keyNumber - 1);
+            }
+        };
+
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [displayHand, hoveredCardIndex, isMyTurnToPlay]);
 
     const toggleSelect = (id: string) => {
         if (gameState.phase === 'TRICK_PLAY') {
-            if (gameState.turnIndex === myIndex) {
-                socket.emit('playCard', id);
+            if (isMyTurnToPlay) {
+                playCard(id);
             }
             return;
         }
@@ -374,10 +459,16 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                         )}
                         {gameState.winningBid && gameState.declarerIndex !== null && gameState.phase !== 'BIDDING' && (
                             <span className="hud-contract-text">
-                                {gameState.winningBid.amount}
-                                {gameState.winningBid.type === 'SUIT' && gameState.winningBid.suit
-                                    ? <span style={{ color: SUIT_COLOR[gameState.winningBid.suit] }}> {SUIT_SYMBOL[gameState.winningBid.suit]}</span>
-                                    : ` ${gameState.winningBid.type}`}
+                                {isShootBid(gameState)
+                                    ? getShootLabel(gameState)
+                                    : (
+                                        <>
+                                            {gameState.winningBid.amount}
+                                            {gameState.winningBid.type === 'SUIT' && gameState.winningBid.suit
+                                                ? <span style={{ color: SUIT_COLOR[gameState.winningBid.suit] }}> {SUIT_SYMBOL[gameState.winningBid.suit]}</span>
+                                                : ` ${gameState.winningBid.type}`}
+                                        </>
+                                    )}
                             </span>
                         )}
                     </div>
@@ -502,7 +593,9 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                         {bidText && <div className="bid-bubble">{bidText}</div>}
                         {gameState.phase !== 'LOBBY' && <div className="hand-count">{p.hand.length}</div>}
                         {gameState.phase === 'PRE_BID_DISCARD' && isLeadBidder && <div className="badge">First Bid</div>}
-                        {gameState.declarerIndex !== null && gameState.players[gameState.declarerIndex]?.id === p.id && <div className="badge">Bidder</div>}
+                        {gameState.declarerIndex !== null && gameState.players[gameState.declarerIndex]?.id === p.id && (
+                            <div className="badge">{isShootBid(gameState) ? 'Shooting' : 'Bidder'}</div>
+                        )}
                     </div>
                 );
             })}
@@ -536,16 +629,27 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
             {/* My Hand */}
             <div className="my-hand">
-                {displayHand.map((card) => (
-                    <Card
-                        key={card.id}
-                        card={card}
-                        playable={gameState.phase === 'TRICK_PLAY' && gameState.turnIndex === myIndex}
-                        selected={selectedCardIds.includes(card.id)}
-                        onClick={() => toggleSelect(card.id)}
-                        isTrump={gameState.trump ? getEffectiveSuit(card, gameState.trump) === gameState.trump : false}
-                    />
-                ))}
+                {displayHand.map((card, index) => {
+                    const keyboardHovered = isMyTurnToPlay && hoveredCardIndex === index;
+                    return (
+                        <div
+                            key={card.id}
+                            className={`my-hand-card-slot ${keyboardHovered ? 'keyboard-hover' : ''}`}
+                            onMouseEnter={() => {
+                                if (isMyTurnToPlay) setHoveredCardIndex(index);
+                            }}
+                        >
+                            <Card
+                                card={card}
+                                playable={gameState.phase === 'TRICK_PLAY' && gameState.turnIndex === myIndex}
+                                selected={selectedCardIds.includes(card.id) || keyboardHovered}
+                                onClick={() => toggleSelect(card.id)}
+                                isTrump={gameState.trump ? getEffectiveSuit(card, gameState.trump) === gameState.trump : false}
+                            />
+                            {index < 8 && <div className="card-shortcut-label">{index + 1}</div>}
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Controls Overlay */}
