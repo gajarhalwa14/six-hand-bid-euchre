@@ -669,6 +669,12 @@
     pointer-events: none;
 }
 
+/* Spectators see every seat — the bottom slot is not reserved for a hand. */
+.table.spectator-view .player-seat.bottom {
+    opacity: 1;
+    pointer-events: none;
+}
+
 .bottom-left { bottom: 18%; left: 8%; }
 .top-left { top: 18%; left: 8%; }
 .top { top: 60px; left: 50%; transform: translateX(-50%); }

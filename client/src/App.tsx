@@ -41,7 +41,7 @@ function getSession(): StoredSession | null {
 }
 
 function App() {
-  const [bootDone, setBootDone] = useState(false);
+  const [introComplete, setIntroComplete] = useState(false);
   const [user, setUser] = useState<{ username: string; displayName: string; userId?: string } | null>(getStoredUser);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -99,29 +99,38 @@ function App() {
     };
   }, []);
 
-  if (!bootDone) {
-    return <LoadingScreen onComplete={() => setBootDone(true)} />;
-  }
-
-  if (!user) {
-    return <Login onLogin={handleLogin} visible={bootDone} />;
-  }
-
   return (
-    <div className="app">
-      {error && <div style={{
-        position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)',
-        background: 'red', padding: '10px', color: 'white', zIndex: 9999
-      }}>
-        {error}
-      </div>}
-
-      {!gameState ? (
-        <Lobby onJoin={saveSession} defaultName={user.displayName} defaultAvatarId={localStorage.getItem('avatarId') || undefined} onLogout={handleLogout} />
+    <>
+      {/* Login / lobby sit on the dark spade background. Game table paints its own green felt. */}
+      {!user ? (
+        <div className="app-dark-bg app-shell">
+          <Login onLogin={handleLogin} />
+        </div>
       ) : (
-        <GameTable gameState={gameState} myId={socket.id || ''} onLeave={handleLeaveRoom} />
+        <div className={`app-shell ${!gameState ? 'app-dark-bg' : ''}`}>
+          {error && (
+            <div className="app-error-toast">{error}</div>
+          )}
+
+          {!gameState ? (
+            <Lobby
+              onJoin={saveSession}
+              defaultName={user.displayName}
+              defaultAvatarId={localStorage.getItem('avatarId') || undefined}
+              onLogout={handleLogout}
+            />
+          ) : (
+            <GameTable gameState={gameState} myId={socket.id || ''} onLeave={handleLeaveRoom} />
+          )}
+        </div>
       )}
-    </div>
+
+      {/* Intro video sits on top; login is already rendered underneath so the fade
+          reveals the login screen instead of a flash of the old green body bg. */}
+      {!introComplete && (
+        <LoadingScreen onComplete={() => setIntroComplete(true)} />
+      )}
+    </>
   );
 }
 

@@ -6,10 +6,9 @@ const REMEMBER_KEY = 'euchre_remember_username';
 
 interface LoginProps {
     onLogin: (username: string, displayName: string, userId?: string) => void;
-    visible?: boolean;
 }
 
-export const Login: React.FC<LoginProps> = ({ onLogin, visible = true }) => {
+export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     const [mode, setMode] = useState<'login' | 'signup'>('login');
     const [username, setUsername] = useState(() => localStorage.getItem(REMEMBER_KEY) || '');
     const [password, setPassword] = useState('');
@@ -51,7 +50,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, visible = true }) => {
     };
 
     return (
-        <div className={`login-page ${visible ? 'login-page--visible' : ''}`}>
+        <div className="login-page">
             <div className="login-card">
                 <img
                     src="/EuchreLogo.png"

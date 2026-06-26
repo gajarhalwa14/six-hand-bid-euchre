@@ -12,7 +12,7 @@ export const LoadingScreen: React.FC<Props> = ({ onComplete }) => {
     const finish = () => {
         if (fading) return;
         setFading(true);
-        window.setTimeout(onComplete, 700);
+        window.setTimeout(onComplete, 1000);
     };
 
     useEffect(() => {
@@ -21,7 +21,7 @@ export const LoadingScreen: React.FC<Props> = ({ onComplete }) => {
 
         const tryPlay = () => {
             video.play().catch(() => {
-                // Autoplay blocked — skip to login after a short beat.
+                // Autoplay blocked — advance once the browser allows interaction elsewhere.
                 window.setTimeout(finish, 1200);
             });
         };
@@ -32,20 +32,15 @@ export const LoadingScreen: React.FC<Props> = ({ onComplete }) => {
     }, []);
 
     return (
-        <div
-            className={`loading-screen ${fading ? 'fade-out' : ''}`}
-            onClick={finish}
-            role="presentation"
-        >
+        <div className={`loading-screen ${fading ? 'fade-out' : ''}`}>
             <video
                 ref={videoRef}
                 className="loading-video"
-                src="/loadingScreenVideo.mp4"
+                src="/loadingscreenVideo2.mp4"
                 muted
                 playsInline
                 preload="auto"
             />
-            <div className="loading-skip-hint">Tap to skip</div>
         </div>
     );
 };

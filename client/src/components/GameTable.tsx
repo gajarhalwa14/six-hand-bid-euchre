@@ -452,6 +452,23 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
         ? ['bottom', 'left', 'top', 'right']
         : ['bottom', 'bottom-left', 'top-left', 'top', 'top-right', 'bottom-right'];
 
+    // Seated players rotate the table so their seat is at the bottom (hidden — hand
+    // is shown in .my-hand). Spectators get a fixed overview so all seats are visible.
+    const viewSeat = isSpectator ? null : (myPlayer?.seatIndex ?? (myIndex >= 0 ? myIndex : 0));
+
+    const seatToPosition = (seatNum: number) => {
+        if (viewSeat === null) return POSITIONS[seatNum];
+        return POSITIONS[(seatNum - viewSeat + playerCount) % playerCount];
+    };
+
+    const playerIndexToTrickPosition = (playerIndex: number) => {
+        if (isSpectator) {
+            return playerCount === 4 ? [0, 2, 3, 5][playerIndex] : playerIndex;
+        }
+        const relIndex = (playerIndex - myIndex + playerCount) % playerCount;
+        return playerCount === 4 ? [0, 2, 3, 5][relIndex] : relIndex;
+    };
+
     // Calculate Tricks Taken
     const tricksA = gameState.tricksHistory.filter(t => gameState.players[t.winnerIndex!].team === 'A').length;
     const tricksB = gameState.tricksHistory.filter(t => gameState.players[t.winnerIndex!].team === 'B').length;
@@ -469,7 +486,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     const winningPlay = winningCardIndex !== -1 ? gameState.currentTrick.plays[winningCardIndex] : null;
 
     return (
-        <div className="table">
+        <div className={`table ${isSpectator ? 'spectator-view' : ''}`}>
             {/* Back to Home */}
             <button className="back-home-btn" onClick={onLeave}>
                 &larr; Leave Game
@@ -590,14 +607,18 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
             {/* Dealing Animation */}
             {gameState.phase === 'DEALING' && (
-                <DealingAnimation dealerIndex={gameState.dealerIndex} myIndex={myIndex} currentStep={dealStep} playerCount={playerCount} />
+                <DealingAnimation
+                    dealerIndex={gameState.dealerIndex}
+                    myIndex={myIndex}
+                    currentStep={dealStep}
+                    playerCount={playerCount}
+                    isSpectator={isSpectator}
+                />
             )}
 
             {/* Players & Seats */}
             {Array.from({ length: playerCount }, (_, seatNum) => seatNum).map((seatNum) => {
-                const mySeat = myPlayer?.seatIndex ?? myIndex;
-                const relIndex = (seatNum - mySeat + playerCount) % playerCount;
-                const pos = POSITIONS[relIndex];
+                const pos = seatToPosition(seatNum);
 
                 const p = gameState.players.find(pl => pl.seatIndex === seatNum)
                     // Fallback for older states or public rooms before sorting
@@ -680,20 +701,18 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             {/* Center Trick */}
             <div className="trick-zone">
                 {gameState.currentTrick.plays.map((play) => {
-                    const relIndex = (play.playerIndex - (myIndex >= 0 ? myIndex : 0) + playerCount) % playerCount;
-                    const trickPosIndex = playerCount === 4 ? [0, 2, 3, 5][relIndex] : relIndex;
+                    const trickPosIndex = playerIndexToTrickPosition(play.playerIndex);
                     const isWinning = winningPlay && play.playerIndex === winningPlay.playerIndex;
                     const teamClass = gameState.players[play.playerIndex].team === 'A' ? 'team-A' : 'team-B';
 
                     const winnerIdx = gameState.currentTrick.winnerIndex;
-                    const winnerRel = winnerIdx !== null ? (winnerIdx - (myIndex >= 0 ? myIndex : 0) + playerCount) % playerCount : -1;
-                    const collectTarget = winnerRel === -1 ? -1 : (playerCount === 4 ? [0, 2, 3, 5][winnerRel] : winnerRel);
+                    const collectTarget = winnerIdx !== null ? playerIndexToTrickPosition(winnerIdx) : -1;
 
                     return (
                         <div
                             key={play.card.id}
                             className={`trick-card pos-${trickPosIndex} ${teamClass} ${isWinning ? 'winning' : ''} ${collectingTrick ? 'collecting' : ''}`}
-                            style={collectingTrick && winnerRel >= 0 ? {
+                            style={collectingTrick && collectTarget >= 0 ? {
                                 '--collect-target': collectTarget,
                             } as React.CSSProperties : undefined}
                             data-collect-target={collectTarget}
@@ -704,7 +723,8 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 })}
             </div>
 
-            {/* My Hand */}
+            {/* My Hand — only for seated players */}
+            {!isSpectator && (
             <div className="my-hand">
                 {displayHand.map((card, index) => {
                     const keyboardHovered = isMyTurnToPlay && hoveredCardIndex === index;
@@ -728,11 +748,14 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                     );
                 })}
             </div>
+            )}
 
-            {/* Controls Overlay */}
+            {/* Controls Overlay — seated players only */}
+            {!isSpectator && (
             <div className="controls-overlay">
                 <Controls gameState={gameState} myIndex={myIndex} selectedCardIds={selectedCardIds} onAction={clearSelection} />
             </div>
+            )}
 
             {/* Game Over Overlay */}
             {gameState.phase === 'GAME_OVER' && (
