@@ -1,17 +1,14 @@
 import React, { useState } from 'react';
 import './Login.css';
+import { login, persistAuthSession, signup, updateUser } from '../api';
 
 interface LoginProps {
-    onLogin: (email: string, displayName: string) => void;
+    onLogin: (username: string, displayName: string, userId?: string) => void;
 }
-
-const API_BASE = import.meta.env.DEV
-    ? `http://${window.location.hostname}:3000`
-    : '';
 
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     const [mode, setMode] = useState<'login' | 'signup'>('login');
-    const [email, setEmail] = useState('');
+    const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [displayName, setDisplayName] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -23,26 +20,22 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         setLoading(true);
 
         try {
-            const endpoint = mode === 'login' ? '/api/login' : '/api/signup';
-            const body: Record<string, string> = { email, password };
-            if (mode === 'signup') body.displayName = displayName;
-
-            const res = await fetch(`${API_BASE}${endpoint}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-
-            const data = await res.json();
-            if (!res.ok) {
-                setError(data.error || 'Something went wrong');
-                return;
+            if (mode === 'signup') {
+                await signup(username, displayName, password);
             }
 
-            localStorage.setItem('euchre_user', JSON.stringify(data));
-            onLogin(data.email, data.displayName);
-        } catch {
-            setError('Could not connect to server');
+            let { user, token } = await login(username, password);
+            persistAuthSession(user, token);
+
+            // On signup, immediately exercise one protected route and ensure
+            // the backend/frontend token flow is fully wired.
+            if (mode === 'signup' && displayName.trim() && displayName.trim() !== user.display_name) {
+                user = await updateUser(user.user_id, { display_name: displayName.trim() });
+                persistAuthSession(user, token);
+            }
+            onLogin(user.username, user.display_name, user.user_id);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Could not connect to server');
         } finally {
             setLoading(false);
         }
@@ -80,10 +73,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                         />
                     )}
                     <input
-                        type="email"
-                        placeholder="Email"
-                        value={email}
-                        onChange={e => setEmail(e.target.value)}
+                        type="text"
+                        placeholder="Username"
+                        value={username}
+                        onChange={e => setUsername(e.target.value)}
                         required
                         className="login-input"
                     />
@@ -93,7 +86,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                         value={password}
                         onChange={e => setPassword(e.target.value)}
                         required
-                        minLength={4}
+                        minLength={8}
                         className="login-input"
                     />
 

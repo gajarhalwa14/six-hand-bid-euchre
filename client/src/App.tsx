@@ -5,6 +5,7 @@ import { Login } from './components/Login';
 import { Lobby } from './components/Lobby';
 import { GameTable } from './components/GameTable';
 import type { GameMode } from './types';
+import { clearAuthSession, getStoredUser } from './api';
 
 function saveSession(roomId: string, name: string, isPrivate: boolean, avatarId?: string, gameMode: GameMode = 'CLASSIC') {
   sessionStorage.setItem('euchre_session', JSON.stringify({ roomId, name, isPrivate, avatarId, gameMode }));
@@ -21,24 +22,17 @@ function getSession(): { roomId: string; name: string; isPrivate: boolean; avata
   } catch { return null; }
 }
 
-function getSavedUser(): { email: string; displayName: string } | null {
-  try {
-    const raw = localStorage.getItem('euchre_user');
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-
 function App() {
-  const [user, setUser] = useState<{ email: string; displayName: string } | null>(getSavedUser);
+  const [user, setUser] = useState<{ username: string; displayName: string; userId?: string } | null>(getStoredUser);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleLogin = useCallback((email: string, displayName: string) => {
-    setUser({ email, displayName });
+  const handleLogin = useCallback((username: string, displayName: string, userId?: string) => {
+    setUser({ username, displayName, userId });
   }, []);
 
   const handleLogout = useCallback(() => {
-    localStorage.removeItem('euchre_user');
+    clearAuthSession();
     clearSession();
     socket.emit('leaveRoom');
     setUser(null);
@@ -71,7 +65,7 @@ function App() {
 
     // Auto-reconnect on page refresh if session + user exist
     const session = getSession();
-    const savedUser = getSavedUser();
+    const savedUser = getStoredUser();
     if (session && savedUser) {
       socket.connect();
     }
