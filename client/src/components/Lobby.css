@@ -373,3 +373,99 @@
     box-shadow: 0 0 0 2px rgba(255,215,0,0.4), 0 4px 12px rgba(0,0,0,0.3);
     transform: scale(1.1);
 }
+
+/* ======================================================
+   RESPONSIVE — Phone (<= 600px)
+   ====================================================== */
+@media (max-width: 600px) {
+    .lobby-container {
+        align-items: flex-start;
+        padding: 12px 0;
+        height: 100vh;
+        overflow-y: auto;
+    }
+
+    .lobby-box {
+        padding: 22px 18px;
+        min-width: 0;
+        width: calc(100vw - 16px);
+        max-width: 380px;
+        border-radius: 14px;
+        margin: 0 auto;
+    }
+
+    .lobby-box h1 {
+        font-size: 1.25rem;
+        margin: 0 0 16px 0;
+        padding-right: 60px;
+    }
+
+    .logout-btn {
+        top: 8px;
+        right: 8px;
+        font-size: 0.7rem;
+        padding: 4px 10px;
+    }
+
+    .avatar-preview {
+        width: 64px;
+        height: 64px;
+        margin-bottom: 12px;
+    }
+    .avatar-preview-emoji { font-size: 1.9rem; }
+
+    .avatar-grid {
+        gap: 5px;
+        max-width: 100%;
+        margin-bottom: 14px;
+    }
+
+    .avatar-option {
+        width: 36px;
+        height: 36px;
+        font-size: 1.1rem;
+    }
+
+    .lobby-box input {
+        width: 100%;
+        padding: 10px 14px;
+        font-size: 0.9rem;
+    }
+
+    .lobby-box .name-input {
+        margin-bottom: 16px;
+    }
+
+    .mode-picker {
+        margin: -4px auto 14px;
+    }
+
+    .mode-btn {
+        padding: 7px 10px;
+        font-size: 0.72rem;
+    }
+
+    .action-btn {
+        width: 100%;
+        padding: 11px;
+        font-size: 0.88rem;
+    }
+
+    .public-rooms-view {
+        width: 100%;
+    }
+
+    .rooms-list {
+        max-height: 220px;
+    }
+
+    .room-item {
+        padding: 10px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .room-info { flex: 1 1 auto; min-width: 0; }
+    .room-id { font-size: 0.85rem; }
+    .player-count { font-size: 0.72rem; }
+}

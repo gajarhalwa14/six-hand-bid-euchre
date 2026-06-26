@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import type { GameState, Card as CardType, Suit, ChatMessage } from '../types';
 import { determineTrickWinner, getEffectiveSuit } from '@shared/CardUtils';
 import { Card } from './Card';
@@ -63,12 +63,21 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     const [dealStep, setDealStep] = useState(-1);
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [chatInput, setChatInput] = useState('');
-    const [chatMinimized, setChatMinimized] = useState(false);
-    const [chatPos, setChatPos] = useState<{ x: number; y: number }>({ x: 12, y: 52 });
+    // Default to minimized on small screens so chat doesn't cover the table
+    const isInitiallyMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+    const [chatMinimized, setChatMinimized] = useState(isInitiallyMobile);
+    const [chatPos, setChatPos] = useState<{ x: number; y: number } | null>(null);
     const [draggingChat, setDraggingChat] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [chatFlash, setChatFlash] = useState(false);
     const chatMessagesRef = useRef<HTMLDivElement | null>(null);
-    const dragStartRef = useRef<{ mouseX: number; mouseY: number; startX: number; startY: number } | null>(null);
+    const chatPanelRef = useRef<HTMLDivElement | null>(null);
+    const dragStartRef = useRef<{ pointerX: number; pointerY: number; startX: number; startY: number } | null>(null);
+    const flashTimeoutRef = useRef<number | null>(null);
+    const chatMinimizedRef = useRef(chatMinimized);
     const prevPhaseRef = useRef(gameState.phase);
+
+    useEffect(() => { chatMinimizedRef.current = chatMinimized; }, [chatMinimized]);
 
     useEffect(() => {
         setSelectedCardIds([]);
@@ -109,40 +118,124 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
         });
         socket.on('chatMessage', (message) => {
             setChatMessages(prev => [...prev, message]);
+            // Notify on incoming messages from others (not your own)
+            if (message.senderId !== myId) {
+                setChatFlash(true);
+                if (flashTimeoutRef.current !== null) {
+                    window.clearTimeout(flashTimeoutRef.current);
+                }
+                flashTimeoutRef.current = window.setTimeout(() => setChatFlash(false), 1400);
+                // Only count as unread when the chat is currently minimized
+                if (chatMinimizedRef.current) {
+                    setUnreadCount(c => c + 1);
+                }
+            }
         });
         return () => {
             socket.off('chatHistory');
             socket.off('chatMessage');
         };
-    }, []);
+    }, [myId]);
 
+    // Reset unread count when chat is opened
     useEffect(() => {
-        if (chatMessagesRef.current) {
-            chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+        if (!chatMinimized) {
+            setUnreadCount(0);
         }
-    }, [chatMessages]);
+    }, [chatMinimized]);
+
+    // Scroll chat to bottom whenever messages change AND when chat is reopened
+    useLayoutEffect(() => {
+        if (chatMinimized) return;
+        const el = chatMessagesRef.current;
+        if (el) {
+            el.scrollTop = el.scrollHeight;
+        }
+    }, [chatMessages, chatMinimized]);
+
+    // Initialize / re-clamp chat panel position so it always fits in the viewport.
+    // Runs on mount and whenever the chat is expanded/minimized (which changes its size).
+    useLayoutEffect(() => {
+        const panel = chatPanelRef.current;
+        if (!panel) return;
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+
+        // Defer to next frame so the panel reflects the new minimized state.
+        const id = window.requestAnimationFrame(() => {
+            const w = panel.offsetWidth;
+            const h = panel.offsetHeight;
+            const maxX = Math.max(8, window.innerWidth - w - 8);
+            const maxY = Math.max(8, window.innerHeight - h - 8);
+
+            setChatPos(prev => {
+                if (prev === null) {
+                    // First-time positioning
+                    if (isMobile) {
+                        return { x: 8, y: maxY };
+                    }
+                    return { x: maxX, y: 56 };
+                }
+                return { x: Math.min(prev.x, maxX), y: Math.min(prev.y, maxY) };
+            });
+        });
+        return () => window.cancelAnimationFrame(id);
+    }, [chatMinimized]);
+
+    // Keep chat in viewport when window resizes
+    useEffect(() => {
+        const onResize = () => {
+            const panel = chatPanelRef.current;
+            if (!panel) return;
+            const w = panel.offsetWidth;
+            const h = panel.offsetHeight;
+            const maxX = Math.max(8, window.innerWidth - w - 8);
+            const maxY = Math.max(8, window.innerHeight - h - 8);
+            setChatPos(prev => prev
+                ? { x: Math.min(prev.x, maxX), y: Math.min(prev.y, maxY) }
+                : prev);
+        };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
 
     useEffect(() => {
         if (!draggingChat) return;
 
-        const onMove = (e: MouseEvent) => {
+        const move = (clientX: number, clientY: number) => {
             const start = dragStartRef.current;
             if (!start) return;
-            const dx = e.clientX - start.mouseX;
-            const dy = e.clientY - start.mouseY;
-            setChatPos({ x: Math.max(8, start.startX + dx), y: Math.max(8, start.startY + dy) });
+            const dx = clientX - start.pointerX;
+            const dy = clientY - start.pointerY;
+            const panel = chatPanelRef.current;
+            const w = panel?.offsetWidth ?? 280;
+            const h = panel?.offsetHeight ?? 60;
+            const maxX = Math.max(8, window.innerWidth - w - 8);
+            const maxY = Math.max(8, window.innerHeight - h - 8);
+            const x = Math.min(maxX, Math.max(8, start.startX + dx));
+            const y = Math.min(maxY, Math.max(8, start.startY + dy));
+            setChatPos({ x, y });
         };
 
+        const onMouseMove = (e: MouseEvent) => move(e.clientX, e.clientY);
+        const onTouchMove = (e: TouchEvent) => {
+            if (e.touches.length === 0) return;
+            move(e.touches[0].clientX, e.touches[0].clientY);
+            e.preventDefault();
+        };
         const onUp = () => {
             setDraggingChat(false);
             dragStartRef.current = null;
         };
 
-        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mousemove', onMouseMove);
         window.addEventListener('mouseup', onUp);
+        window.addEventListener('touchmove', onTouchMove, { passive: false });
+        window.addEventListener('touchend', onUp);
         return () => {
-            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onUp);
+            window.removeEventListener('touchmove', onTouchMove);
+            window.removeEventListener('touchend', onUp);
         };
     }, [draggingChat]);
 
@@ -156,9 +249,23 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
     const onChatHeaderMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
         if ((e.target as HTMLElement).closest('.chat-min-btn')) return;
+        if (!chatPos) return;
         dragStartRef.current = {
-            mouseX: e.clientX,
-            mouseY: e.clientY,
+            pointerX: e.clientX,
+            pointerY: e.clientY,
+            startX: chatPos.x,
+            startY: chatPos.y
+        };
+        setDraggingChat(true);
+    };
+
+    const onChatHeaderTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+        if ((e.target as HTMLElement).closest('.chat-min-btn')) return;
+        if (!chatPos || e.touches.length === 0) return;
+        const touch = e.touches[0];
+        dragStartRef.current = {
+            pointerX: touch.clientX,
+            pointerY: touch.clientY,
             startX: chatPos.x,
             startY: chatPos.y
         };
@@ -278,15 +385,29 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             </div>
 
             <div
-                className={`chat-panel ${draggingChat ? 'dragging' : ''} ${chatMinimized ? 'minimized' : ''}`}
-                style={{ left: `${chatPos.x}px`, top: `${chatPos.y}px` }}
+                ref={chatPanelRef}
+                className={`chat-panel ${draggingChat ? 'dragging' : ''} ${chatMinimized ? 'minimized' : ''} ${chatFlash ? 'flash' : ''}`}
+                style={chatPos ? { left: `${chatPos.x}px`, top: `${chatPos.y}px` } : { visibility: 'hidden' }}
             >
-                <div className="chat-header" onMouseDown={onChatHeaderMouseDown}>
-                    <span>Room Chat</span>
+                <div
+                    className="chat-header"
+                    onMouseDown={onChatHeaderMouseDown}
+                    onTouchStart={onChatHeaderTouchStart}
+                >
+                    <span className="chat-title">
+                        <span className="chat-icon" aria-hidden="true">💬</span>
+                        <span>Chat</span>
+                        {unreadCount > 0 && chatMinimized && (
+                            <span className="chat-unread-badge" aria-label={`${unreadCount} unread messages`}>
+                                {unreadCount > 99 ? '99+' : unreadCount}
+                            </span>
+                        )}
+                    </span>
                     <button
                         className="chat-min-btn"
                         onClick={() => setChatMinimized(v => !v)}
                         title={chatMinimized ? 'Expand chat' : 'Minimize chat'}
+                        aria-label={chatMinimized ? 'Expand chat' : 'Minimize chat'}
                     >
                         {chatMinimized ? '▢' : '—'}
                     </button>
@@ -368,8 +489,12 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
                 const avatarDef = p.isBot ? BOT_AVATAR : getAvatarById(p.avatarId);
 
+                const hasBidIndicator = !!bidText;
+                const hasBadge = (gameState.phase === 'PRE_BID_DISCARD' && isLeadBidder)
+                    || (gameState.declarerIndex !== null && gameState.players[gameState.declarerIndex]?.id === p.id);
+
                 return (
-                    <div key={p.id} className={`player-seat ${pos} ${isTurn ? 'turn' : ''} ${teamClass}`}>
+                    <div key={p.id} className={`player-seat ${pos} ${isTurn ? 'turn' : ''} ${teamClass} ${hasBidIndicator ? 'has-bid' : ''} ${hasBadge ? 'has-badge' : ''}`}>
                         <div className="avatar" style={avatarDef ? { background: avatarDef.bg } : undefined}>
                             <span className="avatar-emoji">{avatarDef ? avatarDef.emoji : p.name.charAt(0).toUpperCase()}</span>
                         </div>

@@ -73,6 +73,13 @@ export interface GameState {
     // Meta
     dealerIndex: number;
     trump: Suit | null; // Can be null if High/Low
+
+    /**
+     * True iff the recipient of this state is currently allowed to call
+     * "the rest are mine" (TRAM): they are on lead, the trick is empty,
+     * and a worst-case simulation shows they win every remaining trick.
+     */
+    canClaimRest?: boolean;
 }
 
 export interface RoomInfo {
@@ -131,4 +138,6 @@ export interface ClientToServerEvents {
     takeOverBot: (botIndex: number) => void;
     playAgain: () => void;
     sendChatMessage: (text: string) => void;
+    /** Claim the rest of the hand ("The Rest Are Mine"). Server validates. */
+    claimRest: () => void;
 }

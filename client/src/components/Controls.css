@@ -289,6 +289,41 @@
     font-weight: 800;
 }
 
+/* ---- TRAM (The Rest Are Mine) ---- */
+.tram-btn {
+    margin-top: 10px;
+    background: linear-gradient(135deg, #ffd700 0%, #ff9100 100%);
+    color: #1a1a1a;
+    border: 1px solid rgba(255,255,255,0.45);
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3), 0 0 18px rgba(255,215,0,0.45);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+    pointer-events: auto;
+    animation: tramPulse 2.6s ease-in-out infinite;
+}
+
+.tram-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35), 0 0 28px rgba(255,215,0,0.6);
+    filter: brightness(1.05);
+}
+
+.tram-btn:active:not(:disabled) {
+    transform: translateY(0);
+    filter: brightness(0.95);
+}
+
+@keyframes tramPulse {
+    0%, 100% { box-shadow: 0 4px 14px rgba(0,0,0,0.3), 0 0 14px rgba(255,215,0,0.35); }
+    50%      { box-shadow: 0 4px 14px rgba(0,0,0,0.3), 0 0 28px rgba(255,215,0,0.7); }
+}
+
 /* ---- Action Panel (discard/pass) ---- */
 .action-panel {
     display: flex;
@@ -366,4 +401,89 @@
 .bid-history-name {
     font-weight: 600;
     color: rgba(255,255,255,0.7);
+}
+
+/* ======================================================
+   RESPONSIVE — Phone (<= 600px)
+   ====================================================== */
+@media (max-width: 600px) {
+    .panel {
+        padding: 10px 14px;
+    }
+
+    .panel-title {
+        margin: 0 0 8px 0;
+        font-size: 0.78rem;
+    }
+
+    .bidding-panel {
+        width: calc(100vw - 16px);
+        max-width: 360px;
+        padding: 10px 12px;
+    }
+
+    .bid-section { margin-bottom: 8px; }
+    .section-label { font-size: 0.62rem; margin-bottom: 4px; }
+
+    .btn-group { gap: 3px; }
+
+    .bid-num-btn {
+        width: 30px;
+        height: 28px;
+        font-size: 0.78rem;
+    }
+    .bid-special-btn {
+        height: 28px;
+        padding: 0 8px;
+        font-size: 0.65rem;
+    }
+    .bid-type-btn {
+        height: 30px;
+        padding: 0 12px;
+        font-size: 0.72rem;
+    }
+
+    .suit-btn {
+        width: 42px;
+        height: 38px;
+        border-radius: 8px;
+    }
+    .suit-btn-symbol { font-size: 1.3rem; }
+
+    .bid-actions {
+        margin-top: 10px;
+        gap: 6px;
+    }
+    .pass-btn,
+    .submit-bid-btn {
+        padding: 8px 14px;
+        font-size: 0.78rem;
+    }
+
+    .current-high-bar {
+        margin-top: 8px;
+        padding-top: 6px;
+        font-size: 0.68rem;
+    }
+
+    .bid-history { gap: 4px; margin-bottom: 8px; padding-bottom: 6px; }
+    .bid-history-item { font-size: 0.62rem; padding: 2px 6px; }
+
+    .your-turn-panel {
+        padding: 10px 16px;
+        font-size: 0.85rem;
+    }
+    .your-turn-panel .lead-suit-hint { font-size: 0.7rem; margin-top: 4px; }
+
+    .waiting-panel {
+        padding: 8px 14px;
+        font-size: 0.78rem;
+    }
+
+    .action-panel {
+        padding: 12px 16px;
+        gap: 8px;
+    }
+    .sel-dot { width: 10px; height: 10px; }
+    .confirm-btn { padding: 8px 16px; font-size: 0.78rem; }
 }

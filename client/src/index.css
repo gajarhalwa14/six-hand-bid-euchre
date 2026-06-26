@@ -17,7 +17,23 @@ body {
   color: white;
   overflow: hidden;
   height: 100vh;
+  /* Fall back gracefully if svh is not supported */
+  height: 100svh;
   width: 100vw;
+  /* Prevent iOS double-tap zoom and rubber-band scrolling under the table */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  /* Disable text selection on cards/avatars (still allowed in chat & inputs) */
+  -webkit-user-select: none;
+  user-select: none;
+  /* Prevent the iOS keyboard from accidentally shifting our absolute layout */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Allow text selection where the user actually needs it. */
+input, textarea, .chat-messages, .chat-text, .chat-sender {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 #root {

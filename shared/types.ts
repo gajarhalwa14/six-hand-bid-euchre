@@ -73,6 +73,14 @@ export interface GameState {
     dealerIndex: number;
     biddingTurnCount: number; // To track exactly 6 turns
     trump: Suit | null; // Can be null if High/Low
+
+    /**
+     * True iff the recipient of this state is currently allowed to call
+     * "the rest are mine" (TRAM): they are on lead, the trick is empty,
+     * and a worst-case simulation shows they win every remaining trick.
+     * Computed per-recipient on the server.
+     */
+    canClaimRest?: boolean;
 }
 
 export interface ChatMessage {
@@ -109,4 +117,6 @@ export interface ClientToServerEvents {
     discardCards: (cardIds: string[]) => void; // For Shooter
     passCard: (cardId: string) => void; // For Partner
     sendChatMessage: (text: string) => void;
+    /** Claim the rest of the hand ("The Rest Are Mine"). Server validates. */
+    claimRest: () => void;
 }
