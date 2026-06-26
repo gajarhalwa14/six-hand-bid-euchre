@@ -21,6 +21,13 @@ export interface Player {
     avatarId?: string;
 }
 
+export interface Spectator {
+    id: string;
+    name: string;
+    avatarId?: string;
+    isConnected: boolean;
+}
+
 export type Phase = 'LOBBY' | 'DEALING' | 'PRE_BID_DISCARD' | 'BIDDING' | 'SHOOT_DISCARD' | 'SHOOT_PASS' | 'TRICK_PLAY' | 'TRICK_END' | 'SCORING' | 'GAME_OVER';
 
 export type BidType = 'SUIT' | 'HIGH' | 'LOW';
@@ -82,6 +89,9 @@ export interface GameState {
      * Computed per-recipient on the server.
      */
     canClaimRest?: boolean;
+
+    /** Users watching the room without a seat. */
+    spectators?: Spectator[];
 }
 
 export interface RoomInfo {
@@ -106,6 +116,12 @@ export interface SeatSwapOffer {
     toPlayerIndex: number;
 }
 
+export interface SpectatorSwapOffer {
+    fromPlayerId: string;
+    fromPlayerName: string;
+    fromPlayerSeatIndex?: number;
+}
+
 export const SUITS: Suit[] = ['Spades', 'Hearts', 'Clubs', 'Diamonds'];
 export const RANKS: Rank[] = ['9', '10', 'J', 'Q', 'K', 'A'];
 
@@ -118,6 +134,8 @@ export interface ServerToClientEvents {
     roomList: (rooms: RoomInfo[]) => void;
     seatSwapOffer: (offer: SeatSwapOffer) => void;
     seatSwapResult: (msg: string) => void;
+    spectatorSwapOffer: (offer: SpectatorSwapOffer) => void;
+    spectatorSwapResult: (msg: string) => void;
     chatHistory: (messages: ChatMessage[]) => void;
     chatMessage: (message: ChatMessage) => void;
 }
@@ -125,6 +143,7 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
     joinRoom: (roomId: string, name: string, isPrivate?: boolean, avatarId?: string, gameMode?: GameMode) => void;
     joinRandomRoom: (name: string, avatarId?: string, gameMode?: GameMode) => void;
+    joinAsSpectator: (roomId: string, name: string, avatarId?: string) => void;
     requestRoomList: () => void;
     chooseSeat: (seatIndex: number) => void;
     randomizeSeats: () => void;
@@ -137,6 +156,8 @@ export interface ClientToServerEvents {
     leaveRoom: () => void;
     requestSeatSwap: (targetPlayerIndex: number) => void;
     respondSeatSwap: (fromPlayerIndex: number, accepted: boolean) => void;
+    requestSwapWithSpectator: (spectatorId: string) => void;
+    respondSpectatorSwap: (fromPlayerId: string, accepted: boolean) => void;
     takeOverBot: (botIndex: number) => void;
     playAgain: () => void;
     sendChatMessage: (text: string) => void;

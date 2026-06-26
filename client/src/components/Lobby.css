@@ -17,13 +17,12 @@
     box-shadow: 0 20px 60px rgba(0,0,0,0.5);
 }
 
-.lobby-box h1 {
-    margin: 0 0 24px 0;
-    font-size: 1.6rem;
-    color: #ffd700;
-    text-shadow: 0 0 20px rgba(255,215,0,0.25);
-    letter-spacing: 0.03em;
-    font-weight: 800;
+.lobby-logo {
+    width: min(260px, 85%);
+    height: auto;
+    margin: 0 auto 20px;
+    display: block;
+    filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.45));
 }
 
 .lobby-box input {
@@ -130,6 +129,12 @@
 
 .join-btn:not(:disabled):hover {
     background: rgba(255,255,255,0.12);
+}
+
+.spectate-btn {
+    background: linear-gradient(135deg, #2dd4bf, #0d9488);
+    color: white;
+    box-shadow: 0 4px 12px rgba(45,212,191,0.25);
 }
 
 .join-code-view p {
@@ -295,6 +300,30 @@
     transform: translateY(-1px);
 }
 
+.room-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.spectate-room-btn {
+    background: rgba(45,212,191,0.18);
+    color: #5eead4;
+    border: 1px solid rgba(45,212,191,0.35);
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    width: auto;
+    margin: 0;
+    transition: all 0.15s;
+}
+
+.spectate-room-btn:hover {
+    background: rgba(45,212,191,0.3);
+    transform: translateY(-1px);
+}
+
 .logout-btn {
     position: absolute;
     top: 12px;
@@ -394,10 +423,9 @@
         margin: 0 auto;
     }
 
-    .lobby-box h1 {
-        font-size: 1.25rem;
-        margin: 0 0 16px 0;
-        padding-right: 60px;
+    .lobby-logo {
+        width: min(200px, 78%);
+        margin-bottom: 14px;
     }
 
     .logout-btn {

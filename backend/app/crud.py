@@ -6,10 +6,12 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 import os
+from pathlib import Path
 from typing import Annotated
 from database import SupabaseDep
 
-load_dotenv(dotenv_path="../")
+# Always load backend/.env regardless of the process cwd.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 SECRET_KEY = os.getenv("SECRET_KEY") or ""
 ALGORITHM = os.getenv("ALGORITHM") or ""

@@ -5,7 +5,14 @@ import AVATARS from '../avatars';
 import './Lobby.css';
 
 interface LobbyProps {
-    onJoin: (roomId: string, name: string, isPrivate: boolean, avatarId?: string, gameMode?: GameMode) => void;
+    onJoin: (
+        roomId: string,
+        name: string,
+        isPrivate: boolean,
+        avatarId?: string,
+        gameMode?: GameMode,
+        asSpectator?: boolean,
+    ) => void;
     defaultName?: string;
     defaultAvatarId?: string;
     onLogout?: () => void;
@@ -14,7 +21,7 @@ interface LobbyProps {
 export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatarId, onLogout }) => {
     const [name, setName] = useState(defaultName || '');
     const [selectedAvatar, setSelectedAvatar] = useState<string>(defaultAvatarId || AVATARS[0].id);
-    const [view, setView] = useState<'main' | 'join_code' | 'public_rooms'>('main');
+    const [view, setView] = useState<'main' | 'join_code' | 'public_rooms' | 'spectate_code'>('main');
     const [gameMode, setGameMode] = useState<GameMode>('CLASSIC');
     const [roomCode, setRoomCode] = useState('');
     const [assignedRoom, setAssignedRoom] = useState<string | null>(null);
@@ -78,6 +85,18 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
         socket.emit('joinRoom', roomId, trimmedName, false, selectedAvatar, gameMode);
     };
 
+    const handleSpectateRoom = (roomId: string, isPrivate: boolean) => {
+        if (!name.trim()) return;
+        const trimmedName = name.trim();
+        const code = roomId.trim().toUpperCase();
+        if (!code) return;
+        localStorage.setItem('avatarId', selectedAvatar);
+        socket.connect();
+        // Save session so a browser refresh re-joins as a spectator.
+        onJoin(code, trimmedName, isPrivate, selectedAvatar, gameMode, true);
+        socket.emit('joinAsSpectator', code, trimmedName, selectedAvatar);
+    };
+
     const currentAvatar = AVATARS.find(a => a.id === selectedAvatar) || AVATARS[0];
 
     const handleOpenPublicRooms = () => {
@@ -88,7 +107,11 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
     return (
         <div className="lobby-container">
             <div className="lobby-box">
-                <h1>Six-Hand Bid Euchre</h1>
+                <img
+                    src="/EuchreLogo.png"
+                    alt="Six Hand Bid Euchre"
+                    className="lobby-logo"
+                />
 
                 {onLogout && (
                     <button className="logout-btn" onClick={onLogout}>
@@ -175,6 +198,14 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
                         >
                             🔑 Join with Code
                         </button>
+
+                        <button
+                            className="action-btn spectate-btn"
+                            onClick={() => setView('spectate_code')}
+                            disabled={!name}
+                        >
+                            👀 Spectate Room
+                        </button>
                     </div>
                 )}
 
@@ -224,12 +255,21 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
                                             <span className="player-count">👥 {r.playerCount}/{r.maxPlayers} Players</span>
                                             <span className="player-count">{r.gameMode === 'MEGA_DRAFT' ? 'Mega Draft' : 'Classic'}</span>
                                         </div>
-                                        <button
-                                            className="join-room-btn"
-                                            onClick={() => handleJoinSpecificPublicRoom(r.roomId)}
-                                        >
-                                            Join
-                                        </button>
+                                        <div className="room-actions">
+                                            <button
+                                                className="spectate-room-btn"
+                                                onClick={() => handleSpectateRoom(r.roomId, false)}
+                                                title="Watch this room without taking a seat"
+                                            >
+                                                👀
+                                            </button>
+                                            <button
+                                                className="join-room-btn"
+                                                onClick={() => handleJoinSpecificPublicRoom(r.roomId)}
+                                            >
+                                                Join
+                                            </button>
+                                        </div>
                                     </div>
                                 ))
                             )}
@@ -238,6 +278,34 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
                         <div className="code-actions">
                             <button className="back-btn" onClick={() => setView('main')}>
                                 Back
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {view === 'spectate_code' && (
+                    <div className="join-code-view">
+                        <p>Enter a room code to watch a game (no seat will be taken)</p>
+                        <input
+                            className="code-input"
+                            placeholder="Room Code"
+                            value={roomCode}
+                            onChange={e => setRoomCode(e.target.value)}
+                            maxLength={6}
+                        />
+                        <div className="code-actions">
+                            <button
+                                className="back-btn"
+                                onClick={() => setView('main')}
+                            >
+                                Back
+                            </button>
+                            <button
+                                className="action-btn submit-btn"
+                                onClick={() => handleSpectateRoom(roomCode, true)}
+                                disabled={!name || !roomCode}
+                            >
+                                Spectate
                             </button>
                         </div>
                     </div>

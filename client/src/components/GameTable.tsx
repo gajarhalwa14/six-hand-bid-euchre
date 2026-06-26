@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
-import type { GameState, Card as CardType, Suit, ChatMessage } from '../types';
+import type { GameState, Card as CardType, Suit, ChatMessage, SpectatorSwapOffer } from '../types';
 import { determineTrickWinner, getEffectiveSuit } from '@shared/CardUtils';
 import { Card } from './Card';
 import { Controls } from './Controls';
@@ -17,6 +17,13 @@ const SUIT_COLOR: Record<string, string> = {
     Spades: '#1a1a1a', Hearts: '#cc1111', Clubs: '#1a1a1a', Diamonds: '#cc1111'
 };
 
+// Same suits, but tuned for the dark HUD background. The original near-black
+// values are unreadable on dark, so use white for black suits and a brighter
+// red for hearts/diamonds.
+const HUD_SUIT_COLOR: Record<string, string> = {
+    Spades: '#ffffff', Hearts: '#ff5b6b', Clubs: '#ffffff', Diamonds: '#ff5b6b'
+};
+
 const RANK_SORT: Record<string, number> = { 'A': 6, 'K': 5, 'Q': 4, 'J': 3, '10': 2, '9': 1 };
 
 function isShootBid(gameState: GameState): boolean {
@@ -26,8 +33,19 @@ function isShootBid(gameState: GameState): boolean {
     return amount === 9;
 }
 
+function isBidAmountShoot(amount: number | undefined, gameMode: GameState['gameMode']): boolean {
+    if (amount === undefined) return false;
+    if (gameMode === 'MEGA_DRAFT') return amount === 9 || amount === 10;
+    return amount === 9;
+}
+
 function getShootLabel(gameState: GameState): string {
     if (gameState.gameMode === 'MEGA_DRAFT' && gameState.winningBid?.amount === 10) return '1-Card Shoot';
+    return 'Shoot';
+}
+
+function getShootLabelForAmount(amount: number, gameMode: GameState['gameMode']): string {
+    if (gameMode === 'MEGA_DRAFT' && amount === 10) return '1-Card Shoot';
     return 'Shoot';
 }
 
@@ -83,6 +101,9 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     const [unreadCount, setUnreadCount] = useState(0);
     const [chatFlash, setChatFlash] = useState(false);
     const [hoveredCardIndex, setHoveredCardIndex] = useState<number | null>(null);
+    const [pendingSwapOffer, setPendingSwapOffer] = useState<SpectatorSwapOffer | null>(null);
+    const [swapToast, setSwapToast] = useState<string | null>(null);
+    const swapToastTimeoutRef = useRef<number | null>(null);
     const chatMessagesRef = useRef<HTMLDivElement | null>(null);
     const chatPanelRef = useRef<HTMLDivElement | null>(null);
     const dragStartRef = useRef<{ pointerX: number; pointerY: number; startX: number; startY: number } | null>(null);
@@ -149,6 +170,39 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             socket.off('chatMessage');
         };
     }, [myId]);
+
+    // Spectator <-> player swap offer/response side channels.
+    useEffect(() => {
+        const onOffer = (offer: SpectatorSwapOffer) => {
+            // Stash the offer so we render a modal; spectator chooses Accept/Decline.
+            setPendingSwapOffer(offer);
+        };
+        const onResult = (msg: string) => {
+            // Brief toast in the corner. Clears any prior toast cleanly.
+            setSwapToast(msg);
+            if (swapToastTimeoutRef.current !== null) {
+                window.clearTimeout(swapToastTimeoutRef.current);
+            }
+            swapToastTimeoutRef.current = window.setTimeout(() => setSwapToast(null), 3500);
+        };
+        socket.on('spectatorSwapOffer', onOffer);
+        socket.on('spectatorSwapResult', onResult);
+        return () => {
+            socket.off('spectatorSwapOffer', onOffer);
+            socket.off('spectatorSwapResult', onResult);
+        };
+    }, []);
+
+    const respondToSwap = (accepted: boolean) => {
+        if (!pendingSwapOffer) return;
+        socket.emit('respondSpectatorSwap', pendingSwapOffer.fromPlayerId, accepted);
+        setPendingSwapOffer(null);
+    };
+
+    const askToSwapWithSpectator = (spectatorId: string, spectatorName: string) => {
+        if (!window.confirm(`Offer your seat to ${spectatorName}? They'll need to accept.`)) return;
+        socket.emit('requestSwapWithSpectator', spectatorId);
+    };
 
     // Reset unread count when chat is opened
     useEffect(() => {
@@ -286,6 +340,9 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     };
 
     const mySeat = myPlayer?.seatIndex ?? (myIndex >= 0 ? myIndex : -1);
+    const spectators = gameState.spectators ?? [];
+    const isSpectator = spectators.some(s => s.id === myId);
+    const amSeatedHuman = myIndex !== -1 && myPlayer && !myPlayer.isBot;
 
     const sortedHand = useMemo(() => {
         if (!myPlayer) return [];
@@ -449,7 +506,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                     <div className="hud-trump-row">
                         <span className="hud-trump-label">Trump</span>
                         {gameState.trump ? (
-                            <span className="hud-trump-value" style={{ color: SUIT_COLOR[gameState.trump] || '#fff' }}>
+                            <span className="hud-trump-value" style={{ color: HUD_SUIT_COLOR[gameState.trump] || '#fff' }}>
                                 {SUIT_SYMBOL[gameState.trump]}
                             </span>
                         ) : (
@@ -465,7 +522,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                                         <>
                                             {gameState.winningBid.amount}
                                             {gameState.winningBid.type === 'SUIT' && gameState.winningBid.suit
-                                                ? <span style={{ color: SUIT_COLOR[gameState.winningBid.suit] }}> {SUIT_SYMBOL[gameState.winningBid.suit]}</span>
+                                                ? <span style={{ color: HUD_SUIT_COLOR[gameState.winningBid.suit] }}> {SUIT_SYMBOL[gameState.winningBid.suit]}</span>
                                                 : ` ${gameState.winningBid.type}`}
                                         </>
                                     )}
@@ -569,7 +626,13 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
                 let bidText: React.ReactNode = null;
                 if (gameState.phase === 'BIDDING' && playerBid) {
-                    if (playerBid.type === 'SUIT' && playerBid.suit) {
+                    const bidIsShoot = isBidAmountShoot(playerBid.amount, gameState.gameMode);
+                    const isMyBid = pIdx === myIndex;
+                    // Hide shoot details (amount + suit) from non-bidders so opponents
+                    // don't know what suit will be trump until bidding resolves.
+                    if (bidIsShoot && !isMyBid) {
+                        bidText = getShootLabelForAmount(playerBid.amount, gameState.gameMode);
+                    } else if (playerBid.type === 'SUIT' && playerBid.suit) {
                         const sym = SUIT_SYMBOL[playerBid.suit] || playerBid.suit;
                         const col = SUIT_COLOR[playerBid.suit] || '#000';
                         bidText = <>{playerBid.amount} <span style={{ color: col }}>{sym}</span></>;
@@ -581,8 +644,13 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 const avatarDef = p.isBot ? BOT_AVATAR : getAvatarById(p.avatarId);
 
                 const hasBidIndicator = !!bidText;
+                const isDealer = gameState.phase !== 'LOBBY' && pIdx === gameState.dealerIndex;
+                const isBidder = gameState.declarerIndex !== null
+                    && gameState.players[gameState.declarerIndex]?.id === p.id
+                    && gameState.phase !== 'LOBBY';
                 const hasBadge = (gameState.phase === 'PRE_BID_DISCARD' && isLeadBidder)
-                    || (gameState.declarerIndex !== null && gameState.players[gameState.declarerIndex]?.id === p.id);
+                    || isDealer
+                    || isBidder;
 
                 return (
                     <div key={p.id} className={`player-seat ${pos} ${isTurn ? 'turn' : ''} ${teamClass} ${hasBidIndicator ? 'has-bid' : ''} ${hasBadge ? 'has-badge' : ''}`}>
@@ -591,11 +659,20 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                         </div>
                         <div className="player-name">{p.name} {p.isBot ? '🤖' : ''}</div>
                         {bidText && <div className="bid-bubble">{bidText}</div>}
-                        {gameState.phase !== 'LOBBY' && <div className="hand-count">{p.hand.length}</div>}
-                        {gameState.phase === 'PRE_BID_DISCARD' && isLeadBidder && <div className="badge">First Bid</div>}
-                        {gameState.declarerIndex !== null && gameState.players[gameState.declarerIndex]?.id === p.id && (
-                            <div className="badge">{isShootBid(gameState) ? 'Shooting' : 'Bidder'}</div>
-                        )}
+                        <div className={`team-label team-${p.team}`}>TEAM {p.team}</div>
+                        <div className="player-role-badges">
+                            {gameState.phase === 'PRE_BID_DISCARD' && isLeadBidder && (
+                                <div className="badge badge-first-bid">First Bid</div>
+                            )}
+                            {isDealer && (
+                                <div className="badge badge-dealer">Dealer</div>
+                            )}
+                            {isBidder && (
+                                <div className="badge badge-bidder">
+                                    {isShootBid(gameState) ? 'Shooting' : 'Bidder'}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 );
             })}
@@ -699,8 +776,79 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 </div>
             )}
 
-            {/* Bot Takeover Overlay */}
-            {gameState.phase !== 'LOBBY' && gameState.phase !== 'GAME_OVER' && myIndex === -1 && (
+            {/* Spectators panel (visible to everyone, including spectators themselves). */}
+            {(spectators.length > 0 || isSpectator) && (
+                <div className="spectators-panel">
+                    <div className="spectators-header">
+                        <span>👀 Spectators</span>
+                        <span className="spectators-count">{spectators.length}</span>
+                    </div>
+                    {isSpectator && (
+                        <div className="spectator-self-badge">You are watching</div>
+                    )}
+                    <div className="spectators-list">
+                        {spectators.length === 0 ? (
+                            <div className="spectators-empty">No spectators yet</div>
+                        ) : (
+                            spectators.map(s => {
+                                const isMe = s.id === myId;
+                                return (
+                                    <div key={s.id} className={`spectator-item ${isMe ? 'self' : ''}`}>
+                                        <span className="spectator-emoji" aria-hidden="true">
+                                            {(s.avatarId && getAvatarById(s.avatarId)?.emoji) || '👤'}
+                                        </span>
+                                        <span className="spectator-name">{s.name}{isMe ? ' (you)' : ''}</span>
+                                        {/* Only seated humans can offer their seat. */}
+                                        {amSeatedHuman && !isMe && (
+                                            <button
+                                                className="spectator-swap-btn"
+                                                title={`Offer your seat to ${s.name}`}
+                                                onClick={() => askToSwapWithSpectator(s.id, s.name)}
+                                            >
+                                                ↔
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Swap-offer modal: shown to the spectator the moment a player invites them. */}
+            {pendingSwapOffer && (
+                <div className="swap-offer-overlay">
+                    <div className="swap-offer-modal">
+                        <h2>Seat Swap Request</h2>
+                        <p>
+                            <strong>{pendingSwapOffer.fromPlayerName}</strong>
+                            {pendingSwapOffer.fromPlayerSeatIndex !== undefined
+                                ? ` (seat ${pendingSwapOffer.fromPlayerSeatIndex + 1})`
+                                : ''}
+                            {' '}wants to give you their seat. Accept to take their hand and join the game.
+                        </p>
+                        <div className="swap-offer-actions">
+                            <button className="btn-secondary" onClick={() => respondToSwap(false)}>
+                                Decline
+                            </button>
+                            <button className="btn-primary" onClick={() => respondToSwap(true)}>
+                                Accept &amp; Take Seat
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Toast for spectator swap results (sent / declined / accepted). */}
+            {swapToast && (
+                <div className="swap-toast">{swapToast}</div>
+            )}
+
+            {/* Bot Takeover Overlay (only shown for joiners who came in via the
+                normal join path mid-game, NOT for explicit spectators who should
+                be able to just watch). */}
+            {gameState.phase !== 'LOBBY' && gameState.phase !== 'GAME_OVER' && myIndex === -1 && !isSpectator && (
                 <div className="bot-takeover-overlay">
                     <div className="bot-takeover-modal">
                         <h2>Game In Progress</h2>

@@ -356,7 +356,7 @@
     width: 90px;
     text-align: center;
     transition: all 0.3s ease;
-    /* Always above the chat panel so player info (avatar, name, hand-count,
+    /* Always above the chat panel so player info (avatar, name, team-label,
        bid amount, badges) is never hidden behind chat or other UI. */
     z-index: 100;
 }
@@ -427,15 +427,237 @@
     50% { box-shadow: 0 0 25px rgba(255,215,0,0.7), 0 0 50px rgba(255,215,0,0.15); }
 }
 
-.hand-count {
-    margin-top: 2px;
-    font-size: 0.65rem;
-    color: rgba(255,255,255,0.4);
-    font-weight: 600;
+.team-label {
+    margin-top: 3px;
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.18);
 }
 
-.hand-count::after {
-    content: ' cards';
+/* ---- Spectators Panel (top-right under the Leave button) ---- */
+.spectators-panel {
+    position: absolute;
+    top: calc(60px + env(safe-area-inset-top, 0px));
+    right: calc(12px + env(safe-area-inset-right, 0px));
+    z-index: 80;
+    width: 200px;
+    max-height: 40vh;
+    background: linear-gradient(160deg, rgba(10,18,32,0.9) 0%, rgba(6,12,24,0.92) 100%);
+    border: 1px solid rgba(45,212,191,0.25);
+    border-radius: 12px;
+    padding: 10px 12px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+    color: rgba(255,255,255,0.85);
+    font-size: 0.78rem;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.spectators-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #5eead4;
+}
+
+.spectators-count {
+    background: rgba(45,212,191,0.18);
+    border: 1px solid rgba(45,212,191,0.35);
+    border-radius: 999px;
+    padding: 1px 8px;
+    font-size: 0.72rem;
+}
+
+.spectator-self-badge {
+    background: rgba(45,212,191,0.18);
+    border: 1px solid rgba(45,212,191,0.4);
+    color: #ccfbf1;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.spectators-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    max-height: 30vh;
+}
+
+.spectators-empty {
+    color: rgba(255,255,255,0.4);
+    font-style: italic;
+    font-size: 0.72rem;
+    padding: 4px 0;
+}
+
+.spectator-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.04);
+    transition: background 0.15s;
+}
+
+.spectator-item:hover {
+    background: rgba(255,255,255,0.08);
+}
+
+.spectator-item.self {
+    background: rgba(45,212,191,0.12);
+    border: 1px solid rgba(45,212,191,0.25);
+}
+
+.spectator-emoji {
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.spectator-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.78rem;
+}
+
+.spectator-swap-btn {
+    background: rgba(255,215,0,0.18);
+    border: 1px solid rgba(255,215,0,0.35);
+    color: #ffd966;
+    padding: 2px 7px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 700;
+    transition: all 0.15s;
+}
+
+.spectator-swap-btn:hover {
+    background: rgba(255,215,0,0.32);
+    transform: scale(1.05);
+}
+
+/* ---- Swap-Offer Modal (shown to the spectator who got invited) ---- */
+.swap-offer-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(4px);
+    z-index: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.swap-offer-modal {
+    background: linear-gradient(160deg, rgba(20,30,48,0.98) 0%, rgba(10,18,32,0.98) 100%);
+    border: 1px solid rgba(45,212,191,0.4);
+    border-radius: 14px;
+    padding: 24px;
+    max-width: 380px;
+    width: 100%;
+    color: white;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    animation: swapOfferIn 0.18s ease-out;
+}
+
+@keyframes swapOfferIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+.swap-offer-modal h2 {
+    margin: 0 0 12px 0;
+    font-size: 1.15rem;
+}
+
+.swap-offer-modal p {
+    margin: 0 0 18px 0;
+    color: rgba(255,255,255,0.8);
+    line-height: 1.4;
+    font-size: 0.9rem;
+}
+
+.swap-offer-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.swap-offer-actions .btn-secondary,
+.swap-offer-actions .btn-primary {
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    border: none;
+    font-size: 0.9rem;
+}
+
+/* ---- Swap toast (small notification) ---- */
+.swap-toast {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(45,212,191,0.95);
+    color: #042f2e;
+    font-weight: 700;
+    padding: 10px 18px;
+    border-radius: 999px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    z-index: 400;
+    animation: swapToastIn 0.2s ease-out;
+    font-size: 0.85rem;
+}
+
+@keyframes swapToastIn {
+    from { opacity: 0; transform: translate(-50%, 8px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* Smaller spectators panel on phones so it doesn't crowd the table. */
+@media (max-width: 600px) {
+    .spectators-panel {
+        width: 160px;
+        font-size: 0.7rem;
+        padding: 8px 10px;
+        top: calc(52px + env(safe-area-inset-top, 0px));
+    }
+    .spectator-name { font-size: 0.7rem; }
+    .swap-offer-modal { padding: 18px; }
+    .swap-offer-modal h2 { font-size: 1rem; }
+    .swap-offer-modal p { font-size: 0.82rem; }
+}
+
+.team-label.team-A {
+    background: rgba(92, 156, 239, 0.32);
+    border-color: rgba(92, 156, 239, 0.55);
+}
+
+.team-label.team-B {
+    background: rgba(232, 113, 150, 0.32);
+    border-color: rgba(232, 113, 150, 0.55);
 }
 
 /* ---- Seat Positions (Hexagonal) ---- */
@@ -642,22 +864,46 @@
 }
 
 /* ---- Badges ---- */
-.badge {
+.player-role-badges {
     position: absolute;
-    bottom: -8px;
+    bottom: -10px;
     left: 50%;
     transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    z-index: 15;
+    pointer-events: none;
+}
+
+.badge {
     background: linear-gradient(135deg, #ff9800, #e65100);
     color: white;
     font-size: 0.55rem;
     font-weight: 700;
     padding: 2px 8px;
     border-radius: 10px;
-    box-shadow: 0 2px 6px rgba(255,152,0,0.4);
-    z-index: 15;
+    box-shadow: 0 2px 6px rgba(255, 152, 0, 0.4);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     white-space: nowrap;
+}
+
+.badge-dealer {
+    background: linear-gradient(135deg, #7c6cff, #4a3db8);
+    box-shadow: 0 2px 6px rgba(124, 108, 255, 0.45);
+}
+
+.badge-bidder {
+    background: linear-gradient(135deg, #ffd54f, #f9a825);
+    color: #3e2723;
+    box-shadow: 0 2px 6px rgba(255, 213, 79, 0.45);
+}
+
+.badge-first-bid {
+    background: linear-gradient(135deg, #4fc3f7, #0288d1);
+    box-shadow: 0 2px 6px rgba(79, 195, 247, 0.4);
 }
 
 /* ---- Lobby Waiting Overlay ---- */
@@ -1187,7 +1433,7 @@
     .avatar { width: 46px; height: 46px; border-width: 2px; }
     .avatar-emoji, .avatar-initial { font-size: 1.3rem; }
     .player-name { font-size: 0.65rem; max-width: 78px; }
-    .hand-count { font-size: 0.6rem; }
+    .team-label { font-size: 0.55rem; padding: 1px 6px; }
     .bid-bubble { font-size: 0.68rem; padding: 2px 8px; top: -22px; }
 
     .my-hand > * {
@@ -1250,8 +1496,7 @@
         max-width: 64px;
         margin-top: 2px;
     }
-    .hand-count { font-size: 0.55rem; margin-top: 1px; }
-    .hand-count::after { content: ''; }
+    .team-label { font-size: 0.5rem; margin-top: 1px; padding: 1px 5px; letter-spacing: 0.05em; }
 
     .bid-bubble {
         font-size: 0.62rem;

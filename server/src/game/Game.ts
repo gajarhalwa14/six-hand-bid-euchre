@@ -1,4 +1,4 @@
-import { GameState, Player, Card, Bid, Suit, Phase, Trick, TeamId, SUITS, BidType, GameMode } from '../types';
+import { GameState, Player, Spectator, Card, Bid, Suit, Phase, Trick, TeamId, SUITS, BidType, GameMode } from '../types';
 import { Deck } from './Deck';
 import { determineTrickWinner, getEffectiveSuit, getCardValue } from './CardUtils';
 import { BotAI } from './BotAI';
@@ -33,8 +33,85 @@ export class Game {
             biddingTurnCount: 0,
             trump: null,
             isPrivate,
-            hostId: null
+            hostId: null,
+            spectators: []
         };
+    }
+
+    addSpectator(id: string, name: string, avatarId?: string): Spectator {
+        // Replace existing entry by name so reconnects don't pile up.
+        const existingByName = this.state.spectators?.findIndex(s => s.name === name) ?? -1;
+        const spectator: Spectator = { id, name, avatarId, isConnected: true };
+        if (!this.state.spectators) this.state.spectators = [];
+        if (existingByName !== -1) {
+            this.state.spectators[existingByName] = spectator;
+        } else {
+            this.state.spectators.push(spectator);
+        }
+        return spectator;
+    }
+
+    removeSpectator(id: string) {
+        if (!this.state.spectators) return;
+        this.state.spectators = this.state.spectators.filter(s => s.id !== id);
+    }
+
+    /**
+     * Atomically swap a seated player with a spectator: the spectator takes
+     * the player's seat (team + hand + connection), and the original player
+     * becomes a spectator. Returns true on success.
+     *
+     * IMPORTANT: this is intended to be called from inside an offer/response
+     * flow gated by `canSwapWithSpectator`.
+     */
+    executeSpectatorSwap(playerId: string, spectatorId: string): boolean {
+        const playerIndex = this.state.players.findIndex(p => p.id === playerId);
+        if (playerIndex === -1) return false;
+        const spectator = this.state.spectators?.find(s => s.id === spectatorId);
+        if (!spectator) return false;
+
+        const player = this.state.players[playerIndex];
+
+        // Spectator takes over the seat: keeps the seat's team, hand, and
+        // seatIndex. From the game's perspective only the id/name/avatar change.
+        const newPlayer: Player = {
+            id: spectator.id,
+            name: spectator.name,
+            team: player.team,
+            hand: player.hand,
+            isConnected: true,
+            seatIndex: player.seatIndex,
+            isBot: false,
+            avatarId: spectator.avatarId,
+        };
+        this.state.players[playerIndex] = newPlayer;
+
+        // Remove the old spectator entry, demote the old player to spectator.
+        this.removeSpectator(spectator.id);
+        this.addSpectator(player.id, player.name, player.avatarId);
+
+        // Host might have just become a spectator — hand the host crown to
+        // another seated human if so.
+        if (this.state.hostId === player.id) {
+            const newHost = this.state.players.find(p => !p.isBot && p.id !== player.id);
+            this.state.hostId = newHost?.id ?? newPlayer.id;
+        }
+
+        return true;
+    }
+
+    /**
+     * Validate that a swap can happen. Refuses bots, spectators who are no
+     * longer connected, and self-swaps.
+     */
+    canSwapWithSpectator(playerId: string, spectatorId: string): { ok: boolean; error?: string } {
+        const player = this.state.players.find(p => p.id === playerId);
+        if (!player) return { ok: false, error: 'You are not in this room' };
+        if (player.isBot) return { ok: false, error: 'Bots cannot offer their seat' };
+        const spectator = this.state.spectators?.find(s => s.id === spectatorId);
+        if (!spectator) return { ok: false, error: 'That spectator has left' };
+        if (spectator.id === playerId) return { ok: false, error: 'Cannot swap with yourself' };
+        return { ok: true };
     }
 
     private getPlayerCount(): number {
@@ -80,6 +157,19 @@ export class Game {
 
     markActivity() {
         this.lastActivityTime = Date.now();
+    }
+
+    /**
+     * Tear down any pending background work (bot turn timers). Called by the
+     * server when a room is being deleted so we don't leave timers running
+     * that touch a stale game.
+     */
+    dispose() {
+        if (this.botTimeout) {
+            clearTimeout(this.botTimeout);
+            this.botTimeout = undefined;
+        }
+        this.onStateChange = undefined;
     }
 
     addPlayer(id: string, name: string, avatarId?: string): Player | null {

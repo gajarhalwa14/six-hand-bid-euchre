@@ -1,10 +1,11 @@
 import os
+from pathlib import Path
 from typing import Annotated
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from fastapi import Depends
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL") or "localhost"
 SUPABASE_KEY = os.getenv("SUPABASE_KEY") or "error"
