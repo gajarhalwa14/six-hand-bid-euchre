@@ -104,24 +104,42 @@ https://random-words-here.trycloudflare.com/debug/rooms
 
 ## Deployment
 
-### Production Build
-1. Build the client:
-   ```bash
-   cd client
-   npm run build
-   ```
-   This creates a `dist` folder.
+This repository is a monorepo. Deploy each app separately by setting a different root directory:
 
-2. Build the server:
-   ```bash
-   cd server
-   npx tsc
-   ```
-   This creates a `dist` folder.
+- `client` -> React frontend (static site)
+- `server` -> Socket.IO realtime server
+- `backend` -> FastAPI REST API
 
-3. Serve:
-   - Configure the server to serve `client/dist` as static files.
-   - START command: `node server/dist/index.js`
+### Deploy with Render Blueprint (`render.yaml`)
+
+The root `render.yaml` defines three services:
+
+1. **six-hand-bid-euchre-client** (`client`, static site)
+2. **six-hand-bid-euchre-server** (`server`, Node web service)
+3. **six-hand-bid-euchre-backend** (`backend`, Python web service)
+
+To deploy:
+
+1. Push this repo to GitHub.
+2. In Render, create a new Blueprint and select this repo.
+3. Fill in required env vars in Render:
+   - **Frontend (`client`)**
+     - `VITE_API_BASE_URL` = your backend URL, e.g. `https://six-hand-bid-euchre-backend.onrender.com`
+     - `VITE_SOCKET_URL` = your realtime server URL, e.g. `https://six-hand-bid-euchre-server.onrender.com`
+   - **Backend (`backend`)**
+     - `SUPABASE_URL`
+     - `SUPABASE_KEY`
+     - `SECRET_KEY`
+     - `ALGORITHM` (defaults to `HS256` in blueprint)
+4. Deploy all services.
+
+### Important post-deploy checks
+
+- Update FastAPI CORS origins to include your deployed frontend URL.
+- Confirm login flow:
+  - `POST /token` returns token
+  - protected endpoints work with `Authorization: Bearer <token>`
+- Confirm frontend connects to realtime server via `VITE_SOCKET_URL`.
 
 ## Game Rules
 - **Players**: 6 (2 teams of 3).
