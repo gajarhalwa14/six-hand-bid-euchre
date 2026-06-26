@@ -5,6 +5,24 @@ Legend: `[ ]` not started · `[/]` in progress · `[x]` done
 
 ---
 
+## Bug Fixes
+
+- [ ] **Stop suit being revealing immediately when shooting (i.e 9 Diamonds) until after the bidding phase is over**
+- [ ] **Remove "0 cards" text underneath players**
+- [ ] **Fix "Bidder" tag alignment**
+- [ ] **Get rid of lobbies if there are no active players in the lobby (or have the option to save the state of the lobby)**
+
+---
+
+## Features to Add
+
+- [ ] **TRAM**
+- [ ] **Add dealer and leader icons**
+- [ ] **Make it more apparent visually which team you are on and who your teammates are**
+- [ ] **Revamp card art**
+- [ ] **Settings/Profile page with stats (involves backend stuff)**
+- [ ] **Actually implement public lobbies**
+
 ## Lobby System
 
 - [x] **Public / Private room flag** — extend `GameState` with `isPrivate: boolean`
