@@ -26,10 +26,12 @@ body {
 
 /* Shared dark spade-pattern background for login, lobby, and other menus. */
 .app-dark-bg {
-  min-height: 100vh;
-  min-height: 100svh;
-  width: 100%;
-  background-color: #0a0e17;
+    min-height: 100vh;
+    min-height: 100svh;
+    width: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background-color: #0a0e17;
   background-image:
     radial-gradient(ellipse at 50% 0%, rgba(197, 160, 89, 0.06) 0%, transparent 50%),
     url('/app-background.png');

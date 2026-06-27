@@ -1,6 +1,12 @@
 import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import type { GameState, Card as CardType, Suit, ChatMessage, SpectatorSwapOffer } from '../types';
 import { determineTrickWinner, getEffectiveSuit } from '@shared/CardUtils';
+import {
+    isShootBidAmount,
+    shouldConcealShootBid,
+    shouldConcealShootBidFromViewer,
+    getShootLabelForAmount,
+} from '@shared/bidUtils';
 import { Card } from './Card';
 import { Controls } from './Controls';
 import { DealingAnimation } from './DealingAnimation';
@@ -29,24 +35,19 @@ const RANK_SORT: Record<string, number> = { 'A': 6, 'K': 5, 'Q': 4, 'J': 3, '10'
 function isShootBid(gameState: GameState): boolean {
     const amount = gameState.winningBid?.amount;
     if (amount === undefined) return false;
-    if (gameState.gameMode === 'MEGA_DRAFT') return amount === 9 || amount === 10;
-    return amount === 9;
-}
-
-function isBidAmountShoot(amount: number | undefined, gameMode: GameState['gameMode']): boolean {
-    if (amount === undefined) return false;
-    if (gameMode === 'MEGA_DRAFT') return amount === 9 || amount === 10;
-    return amount === 9;
+    return isShootBidAmount(amount, gameState.gameMode);
 }
 
 function getShootLabel(gameState: GameState): string {
-    if (gameState.gameMode === 'MEGA_DRAFT' && gameState.winningBid?.amount === 10) return '1-Card Shoot';
-    return 'Shoot';
+    if (!gameState.winningBid) return 'Shoot';
+    return getShootLabelForAmount(gameState.winningBid.amount, gameState.gameMode);
 }
 
-function getShootLabelForAmount(amount: number, gameMode: GameState['gameMode']): string {
-    if (gameMode === 'MEGA_DRAFT' && amount === 10) return '1-Card Shoot';
-    return 'Shoot';
+function shouldHideTrumpHud(gameState: GameState, myIndex: number): boolean {
+    if (!gameState.winningBid || gameState.declarerIndex === null) return false;
+    if (!shouldConcealShootBid(gameState.phase)) return false;
+    if (!isShootBidAmount(gameState.winningBid.amount, gameState.gameMode)) return false;
+    return myIndex !== gameState.declarerIndex;
 }
 
 function sortHandCards(cards: CardType[], trump: Suit | null): CardType[] {
@@ -522,27 +523,33 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 {gameState.phase !== 'LOBBY' && (
                     <div className="hud-trump-row">
                         <span className="hud-trump-label">Trump</span>
-                        {gameState.trump ? (
+                        {shouldHideTrumpHud(gameState, myIndex) ? (
+                            <span className="hud-trump-text">Hidden</span>
+                        ) : gameState.trump ? (
                             <span className="hud-trump-value" style={{ color: HUD_SUIT_COLOR[gameState.trump] || '#fff' }}>
                                 {SUIT_SYMBOL[gameState.trump]}
                             </span>
                         ) : (
                             <span className="hud-trump-text">
-                                {gameState.winningBid?.type === 'HIGH' ? 'High' : (gameState.winningBid?.type === 'LOW' ? 'Low' : '—')}
+                                {gameState.winningBid && !shouldConcealShootBidFromViewer(gameState.winningBid, gameState.gameMode, gameState.phase, myIndex)
+                                    ? (gameState.winningBid.type === 'HIGH' ? 'High' : (gameState.winningBid.type === 'LOW' ? 'Low' : '—'))
+                                    : '—'}
                             </span>
                         )}
                         {gameState.winningBid && gameState.declarerIndex !== null && gameState.phase !== 'BIDDING' && (
                             <span className="hud-contract-text">
-                                {isShootBid(gameState)
+                                {shouldConcealShootBidFromViewer(gameState.winningBid, gameState.gameMode, gameState.phase, myIndex)
                                     ? getShootLabel(gameState)
-                                    : (
-                                        <>
-                                            {gameState.winningBid.amount}
-                                            {gameState.winningBid.type === 'SUIT' && gameState.winningBid.suit
-                                                ? <span style={{ color: HUD_SUIT_COLOR[gameState.winningBid.suit] }}> {SUIT_SYMBOL[gameState.winningBid.suit]}</span>
-                                                : ` ${gameState.winningBid.type}`}
-                                        </>
-                                    )}
+                                    : isShootBid(gameState)
+                                        ? getShootLabel(gameState)
+                                        : (
+                                            <>
+                                                {gameState.winningBid.amount}
+                                                {gameState.winningBid.type === 'SUIT' && gameState.winningBid.suit
+                                                    ? <span style={{ color: HUD_SUIT_COLOR[gameState.winningBid.suit] }}> {SUIT_SYMBOL[gameState.winningBid.suit]}</span>
+                                                    : ` ${gameState.winningBid.type}`}
+                                            </>
+                                        )}
                             </span>
                         )}
                     </div>
@@ -647,11 +654,9 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
                 let bidText: React.ReactNode = null;
                 if (gameState.phase === 'BIDDING' && playerBid) {
-                    const bidIsShoot = isBidAmountShoot(playerBid.amount, gameState.gameMode);
-                    const isMyBid = pIdx === myIndex;
-                    // Hide shoot details (amount + suit) from non-bidders so opponents
-                    // don't know what suit will be trump until bidding resolves.
-                    if (bidIsShoot && !isMyBid) {
+                    const bidIsShoot = isShootBidAmount(playerBid.amount, gameState.gameMode);
+                    const concealed = shouldConcealShootBidFromViewer(playerBid, gameState.gameMode, gameState.phase, myIndex);
+                    if (concealed || (bidIsShoot && pIdx !== myIndex)) {
                         bidText = getShootLabelForAmount(playerBid.amount, gameState.gameMode);
                     } else if (playerBid.type === 'SUIT' && playerBid.suit) {
                         const sym = SUIT_SYMBOL[playerBid.suit] || playerBid.suit;
@@ -680,6 +685,18 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                         </div>
                         <div className="player-name">{p.name} {p.isBot ? '🤖' : ''}</div>
                         {bidText && <div className="bid-bubble">{bidText}</div>}
+                        {gameState.tramClaim && pIdx === gameState.tramClaim.playerIndex && (
+                            <div className="tram-announcement">
+                                <div className="tram-speech-bubble">The rest are mine!</div>
+                                <div className="tram-cards">
+                                    {gameState.tramClaim.cards.map(card => (
+                                        <div key={card.id} className="tram-card">
+                                            <Card card={card} />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                         <div className={`team-label team-${p.team}`}>TEAM {p.team}</div>
                         <div className="player-role-badges">
                             {gameState.phase === 'PRE_BID_DISCARD' && isLeadBidder && (
@@ -698,8 +715,43 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 );
             })}
 
-            {/* Center Trick */}
+            {/* Center Trick / Bidding */}
             <div className="trick-zone">
+                {gameState.phase === 'BIDDING' && (
+                    <div className="bidding-center-panel">
+                        <div className="bidding-center-label">Current Bid</div>
+                        {gameState.winningBid ? (
+                            <div className="bidding-center-value">
+                                {shouldConcealShootBidFromViewer(gameState.winningBid, gameState.gameMode, gameState.phase, myIndex)
+                                    ? getShootLabelForAmount(gameState.winningBid.amount, gameState.gameMode)
+                                    : gameState.winningBid.type === 'SUIT' && gameState.winningBid.suit
+                                        ? (
+                                            <>
+                                                {gameState.winningBid.amount}{' '}
+                                                <span style={{ color: HUD_SUIT_COLOR[gameState.winningBid.suit] }}>
+                                                    {SUIT_SYMBOL[gameState.winningBid.suit]}
+                                                </span>
+                                            </>
+                                        )
+                                        : isShootBidAmount(gameState.winningBid.amount, gameState.gameMode)
+                                            ? getShootLabelForAmount(gameState.winningBid.amount, gameState.gameMode)
+                                            : `${gameState.winningBid.amount} ${gameState.winningBid.type}`}
+                            </div>
+                        ) : (
+                            <div className="bidding-center-value bidding-center-none">No bids yet</div>
+                        )}
+                        {gameState.winningBid && gameState.declarerIndex !== null && (
+                            <div className="bidding-center-by">
+                                by {gameState.players[gameState.declarerIndex]?.name ?? '?'}
+                            </div>
+                        )}
+                        <div className="bidding-center-turn">
+                            {gameState.currentBidderIndex === myIndex
+                                ? 'Your turn to bid'
+                                : `${gameState.players[gameState.currentBidderIndex]?.name ?? '…'} is bidding…`}
+                        </div>
+                    </div>
+                )}
                 {gameState.currentTrick.plays.map((play) => {
                     const trickPosIndex = playerIndexToTrickPosition(play.playerIndex);
                     const isWinning = winningPlay && play.playerIndex === winningPlay.playerIndex;

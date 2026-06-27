@@ -6,7 +6,8 @@ import path from 'path';
 import fs from 'fs';
 import bcrypt from 'bcryptjs';
 import { Game } from './game/Game';
-import { ClientToServerEvents, ServerToClientEvents, GameState, Player, RoomInfo, GameMode, ChatMessage } from './types';
+import { ClientToServerEvents, ServerToClientEvents, GameState, Player, RoomInfo, GameMode, ChatMessage, Bid, Phase } from './types';
+import { generateRoomCode } from './utils/roomCode';
 
 const app = express();
 app.use(cors());
@@ -123,34 +124,58 @@ function broadcastState(roomId: string, game: Game) {
     }
 }
 
+function isShootBidAmount(amount: number, gameMode: GameMode): boolean {
+    return amount === 9 || (gameMode === 'MEGA_DRAFT' && amount === 10);
+}
+
+function shouldConcealShootBid(phase: Phase): boolean {
+    return phase === 'BIDDING' || phase === 'SHOOT_DISCARD';
+}
+
+function maskBidForViewer(bid: Bid, gameMode: GameMode, phase: Phase, myIdx: number): Bid {
+    if (!shouldConcealShootBid(phase)) return bid;
+    if (!isShootBidAmount(bid.amount, gameMode)) return bid;
+    if (bid.playerIndex === myIdx) return bid;
+    return { amount: bid.amount, playerIndex: bid.playerIndex, type: 'SUIT' };
+}
+
+function maskWinningBidForViewer(
+    winningBid: Bid | null,
+    gameMode: GameMode,
+    phase: Phase,
+    myIdx: number
+): Bid | null {
+    if (!winningBid) return null;
+    if (!shouldConcealShootBid(phase)) return winningBid;
+    if (!isShootBidAmount(winningBid.amount, gameMode)) return winningBid;
+    if (winningBid.playerIndex === myIdx) return winningBid;
+    return { amount: winningBid.amount, playerIndex: winningBid.playerIndex, type: 'SUIT' };
+}
+
 function sanitize(game: Game, playerId: string): GameState {
     const state = game.state;
     const myIdx = state.players.findIndex(p => p.id === playerId);
-    // Only the recipient ever sees their hand and TRAM-eligibility.
     const canClaimRest = myIdx !== -1 ? game.canClaimRest(myIdx) : false;
 
-    // During BIDDING, the suit chosen for a shoot bid is private to the
-    // bidder — opponents should only see "Shooting", not the suit. Once
-    // bidding ends and the shoot is the winning bid, the suit is exposed
-    // via `state.trump` and the bid bubble disappears anyway, so we only
-    // need to mask while in the BIDDING phase.
-    const sanitizedBids = state.phase === 'BIDDING'
-        ? state.bids.map(b => {
-            const isShoot = b.amount === 9 || (state.gameMode === 'MEGA_DRAFT' && b.amount === 10);
-            if (isShoot && b.playerIndex !== myIdx) {
-                return { ...b, suit: undefined };
-            }
-            return b;
-        })
-        : state.bids;
+    const concealShoot = shouldConcealShootBid(state.phase);
+    const winningBidIsShoot = state.winningBid
+        ? isShootBidAmount(state.winningBid.amount, state.gameMode)
+        : false;
+    const hideTrumpFromViewer = concealShoot
+        && winningBidIsShoot
+        && myIdx !== state.declarerIndex;
+
+    const sanitizedBids = state.bids.map(b => maskBidForViewer(b, state.gameMode, state.phase, myIdx));
 
     return {
         ...state,
         canClaimRest,
+        winningBid: maskWinningBidForViewer(state.winningBid, state.gameMode, state.phase, myIdx),
+        trump: hideTrumpFromViewer ? null : state.trump,
         bids: sanitizedBids,
         players: state.players.map(p => {
             if (p.id === playerId) return p;
-            return { ...p, hand: [] }; // Hide other hands
+            return { ...p, hand: [] };
         })
     };
 }
@@ -256,9 +281,9 @@ io.on('connection', (socket) => {
             }
         }
 
-        // No matching room — create a fresh public one with a random 6-char code
+        // No matching room — create a fresh public one with a numeric code
         if (!targetRoomId) {
-            targetRoomId = Math.random().toString(36).slice(2, 8).toUpperCase();
+            targetRoomId = generateRoomCode(gameMode);
             const newGame = new Game(targetRoomId, false, gameMode);
             newGame.onStateChange = () => broadcastState(targetRoomId!, newGame);
             rooms.set(targetRoomId, newGame);

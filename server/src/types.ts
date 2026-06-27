@@ -90,6 +90,13 @@ export interface GameState {
      */
     canClaimRest?: boolean;
 
+    /** Set when a player claims TRAM — everyone sees their hand briefly. */
+    tramClaim?: {
+        playerIndex: number;
+        playerName: string;
+        cards: Card[];
+    } | null;
+
     /** Users watching the room without a seat. */
     spectators?: Spectator[];
 }

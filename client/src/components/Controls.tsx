@@ -2,6 +2,11 @@ import React, { useState } from 'react';
 import type { GameState, Suit } from '../types';
 import { socket } from '../socket';
 import clsx from 'clsx';
+import {
+    shouldConcealShootBidFromViewer,
+    getShootLabelForAmount,
+    isShootBidAmount,
+} from '@shared/bidUtils';
 import './Controls.css';
 
 interface Props {
@@ -28,6 +33,35 @@ export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds,
     const [bidAmount, setBidAmount] = useState<number>(3);
     const [bidType, setBidType] = useState<'SUIT' | 'HIGH' | 'LOW'>('SUIT');
     const [bidSuit, setBidSuit] = useState<Suit>('Spades');
+    const [pendingBidConfirm, setPendingBidConfirm] = useState<string | null>(null);
+
+    const formatBidLabel = (amount: number, type: 'SUIT' | 'HIGH' | 'LOW', suit?: Suit): string => {
+        if (isShootBidAmount(amount, gameState.gameMode)) {
+            return getShootLabelForAmount(amount, gameState.gameMode);
+        }
+        if (amount === 10 && !isMegaDraft) return 'Alone';
+        if (amount === 11 && isMegaDraft) return 'Alone';
+        if (type === 'SUIT' && suit) return `${amount} ${SUIT_SYMBOL[suit]}`;
+        return `${amount} ${type}`;
+    };
+
+    const formatBidFromState = (bid: NonNullable<GameState['winningBid']>): React.ReactNode => {
+        if (shouldConcealShootBidFromViewer(bid, gameState.gameMode, gameState.phase, myIndex)) {
+            return getShootLabelForAmount(bid.amount, gameState.gameMode);
+        }
+        if (isShootBidAmount(bid.amount, gameState.gameMode)) {
+            return getShootLabelForAmount(bid.amount, gameState.gameMode);
+        }
+        if (bid.type === 'SUIT' && bid.suit) {
+            return (
+                <>
+                    {bid.amount}{' '}
+                    <span style={{ color: SUIT_COLOR[bid.suit] }}>{SUIT_SYMBOL[bid.suit]}</span>
+                </>
+            );
+        }
+        return `${bid.amount} ${bid.type}`;
+    };
 
     if (gameState.phase === 'BIDDING') {
         if (gameState.currentBidderIndex !== myIndex) {
@@ -45,38 +79,59 @@ export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds,
         }
 
         const submitBid = () => {
+            setPendingBidConfirm(formatBidLabel(bidAmount, bidType, bidType === 'SUIT' ? bidSuit : undefined));
+        };
+
+        const confirmBid = () => {
             if (bidType === 'SUIT') {
                 socket.emit('bid', { amount: bidAmount, type: 'SUIT', suit: bidSuit, playerIndex: myIndex });
             } else {
                 socket.emit('bid', { amount: bidAmount, type: bidType, playerIndex: myIndex });
             }
+            setPendingBidConfirm(null);
         };
 
         const currentHigh = gameState.winningBid;
         const minBid = currentHigh ? currentHigh.amount + 1 : 3;
 
-        let highLabel = 'None';
-        if (currentHigh) {
-            const suitPart = currentHigh.type === 'SUIT' && currentHigh.suit
-                ? ` ${SUIT_SYMBOL[currentHigh.suit as Suit]}`
-                : ` ${currentHigh.type}`;
-            highLabel = `${currentHigh.amount}${suitPart}`;
-        }
-
         const previousBids = gameState.bids.filter(b => b.playerIndex !== myIndex);
 
         return (
             <div className="panel bidding-panel">
+                {pendingBidConfirm && (
+                    <div className="bid-confirm-overlay" role="dialog" aria-modal="true">
+                        <div className="bid-confirm-modal">
+                            <p className="bid-confirm-text">
+                                You are bidding: <strong>{pendingBidConfirm}</strong>
+                            </p>
+                            <p className="bid-confirm-sub">Confirm this bid?</p>
+                            <div className="bid-confirm-actions">
+                                <button className="bid-confirm-cancel" onClick={() => setPendingBidConfirm(null)}>
+                                    Cancel
+                                </button>
+                                <button className="bid-confirm-ok" onClick={confirmBid}>
+                                    Confirm
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <h3 className="panel-title">Place Your Bid</h3>
 
                 {previousBids.length > 0 && (
                     <div className="bid-history">
                         {previousBids.map((b, idx) => {
                             const pName = gameState.players[b.playerIndex]?.name || '?';
+                            const concealed = shouldConcealShootBidFromViewer(b, gameState.gameMode, gameState.phase, myIndex);
                             const bLabel = b.amount === 0 ? 'Pass'
-                                : b.type === 'SUIT' && b.suit
-                                    ? <>{b.amount} <span style={{ color: SUIT_COLOR[b.suit as Suit] }}>{SUIT_SYMBOL[b.suit as Suit]}</span></>
-                                    : `${b.amount} ${b.type}`;
+                                : concealed
+                                    ? getShootLabelForAmount(b.amount, gameState.gameMode)
+                                    : b.type === 'SUIT' && b.suit
+                                        ? <>{b.amount} <span style={{ color: SUIT_COLOR[b.suit as Suit] }}>{SUIT_SYMBOL[b.suit as Suit]}</span></>
+                                        : isShootBidAmount(b.amount, gameState.gameMode)
+                                            ? getShootLabelForAmount(b.amount, gameState.gameMode)
+                                            : `${b.amount} ${b.type}`;
                             return (
                                 <span key={idx} className="bid-history-item">
                                     <span className="bid-history-name">{pName}</span>: {b.amount === 0 ? 'Pass' : bLabel}
@@ -160,7 +215,7 @@ export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds,
                 </div>
 
                 <div className="current-high-bar">
-                    Current Bid: <strong>{highLabel}</strong>
+                    Current Bid: <strong>{currentHigh ? formatBidFromState(currentHigh) : 'None'}</strong>
                 </div>
             </div>
         );

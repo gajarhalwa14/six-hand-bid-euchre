@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { socket } from '../socket';
 import type { RoomInfo, GameMode } from '../types';
+import { generateRoomCode, getRoomCodeLength } from '@shared/roomCode';
 import AVATARS from '../avatars';
 import './Lobby.css';
 
@@ -26,6 +27,10 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
     const [roomCode, setRoomCode] = useState('');
     const [assignedRoom, setAssignedRoom] = useState<string | null>(null);
     const [publicRooms, setPublicRooms] = useState<RoomInfo[]>([]);
+
+    useEffect(() => {
+        setRoomCode('');
+    }, [gameMode]);
 
     useEffect(() => {
         socket.on('roomJoined', (roomId) => {
@@ -59,7 +64,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
     const handleCreatePrivate = () => {
         if (!name.trim()) return;
         const trimmedName = name.trim();
-        const newCode = Math.random().toString(36).slice(2, 8).toUpperCase();
+        const newCode = generateRoomCode(gameMode);
         localStorage.setItem('avatarId', selectedAvatar);
         socket.connect();
         onJoin(newCode, trimmedName, true, selectedAvatar, gameMode);
@@ -103,6 +108,8 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
         setView('public_rooms');
         fetchRooms();
     };
+
+    const codeLength = getRoomCodeLength(gameMode);
 
     return (
         <div className="lobby-container">
@@ -214,10 +221,11 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
                         <p>Enter a room code to join a private game</p>
                         <input
                             className="code-input"
-                            placeholder="Room Code"
+                            placeholder={`${codeLength}-digit code`}
                             value={roomCode}
-                            onChange={e => setRoomCode(e.target.value)}
-                            maxLength={6}
+                            onChange={e => setRoomCode(e.target.value.replace(/\D/g, '').slice(0, codeLength))}
+                            maxLength={codeLength}
+                            inputMode="numeric"
                         />
                         <div className="code-actions">
                             <button
@@ -288,10 +296,11 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, defaultName, defaultAvatar
                         <p>Enter a room code to watch a game (no seat will be taken)</p>
                         <input
                             className="code-input"
-                            placeholder="Room Code"
+                            placeholder={`${codeLength}-digit code`}
                             value={roomCode}
-                            onChange={e => setRoomCode(e.target.value)}
-                            maxLength={6}
+                            onChange={e => setRoomCode(e.target.value.replace(/\D/g, '').slice(0, codeLength))}
+                            maxLength={codeLength}
+                            inputMode="numeric"
                         />
                         <div className="code-actions">
                             <button

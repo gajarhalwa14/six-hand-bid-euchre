@@ -487,3 +487,81 @@
     .sel-dot { width: 10px; height: 10px; }
     .confirm-btn { padding: 8px 16px; font-size: 0.78rem; }
 }
+
+/* ---- Bid confirmation modal ---- */
+.bid-confirm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 12000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    padding: 16px;
+}
+
+.bid-confirm-modal {
+    width: min(340px, 92vw);
+    padding: 22px 24px;
+    border-radius: 14px;
+    background: linear-gradient(160deg, rgba(18, 28, 50, 0.98) 0%, rgba(10, 16, 32, 0.99) 100%);
+    border: 1px solid rgba(255, 215, 0, 0.3);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    text-align: center;
+}
+
+.bid-confirm-text {
+    margin: 0 0 6px;
+    font-size: 1rem;
+    color: #e8e8e8;
+}
+
+.bid-confirm-text strong {
+    color: #ffd700;
+    font-size: 1.15rem;
+}
+
+.bid-confirm-sub {
+    margin: 0 0 18px;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.bid-confirm-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.bid-confirm-cancel,
+.bid-confirm-ok {
+    flex: 1;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+}
+
+.bid-confirm-cancel {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.bid-confirm-cancel:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.bid-confirm-ok {
+    background: linear-gradient(135deg, #ffd700 0%, #e6b800 100%);
+    color: #1a1200;
+}
+
+.bid-confirm-ok:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+}

@@ -34,7 +34,8 @@ export class Game {
             trump: null,
             isPrivate,
             hostId: null,
-            spectators: []
+            spectators: [],
+            tramClaim: null,
         };
     }
 
@@ -341,6 +342,7 @@ export class Game {
         this.state.winningBid = null;
         this.state.declarerIndex = null;
         this.state.trump = null;
+        this.state.tramClaim = null;
 
         this.state.currentTrick = { leadSuit: null, plays: [], winnerIndex: null };
         this.state.tricksHistory = [];
@@ -830,6 +832,13 @@ export class Game {
             throw new Error("You can't claim the rest right now");
         }
 
+        const claimer = this.state.players[playerIndex];
+        this.state.tramClaim = {
+            playerIndex,
+            playerName: claimer.name,
+            cards: [...claimer.hand],
+        };
+
         const remaining = this.getHandTrickCount() - this.state.tricksHistory.length;
         for (let i = 0; i < remaining; i++) {
             this.state.tricksHistory.push({
@@ -843,10 +852,14 @@ export class Game {
         this.state.players.forEach(p => { p.hand = []; });
         this.state.currentTrick = { leadSuit: null, plays: [], winnerIndex: null };
         this.state.turnIndex = -1;
+        this.state.phase = 'SCORING';
 
-        // scoreHand also handles GAME_OVER vs nextHand transition.
-        this.scoreHand();
+        // Broadcast TRAM reveal first; score and deal after a short pause.
         this.onStateChange?.();
+        setTimeout(() => {
+            this.scoreHand();
+            this.onStateChange?.();
+        }, 4000);
     }
 
     handleShootPass(playerIndex: number, cardId: string) {
