@@ -4,18 +4,36 @@ import { socket } from './socket';
 import { Login } from './components/Login';
 import { Lobby } from './components/Lobby';
 import { GameTable } from './components/GameTable';
+import { LoadingScreen } from './components/LoadingScreen';
 import type { GameMode } from './types';
 import { clearAuthSession, getStoredUser } from './api';
 
-function saveSession(roomId: string, name: string, isPrivate: boolean, avatarId?: string, gameMode: GameMode = 'CLASSIC') {
-  sessionStorage.setItem('euchre_session', JSON.stringify({ roomId, name, isPrivate, avatarId, gameMode }));
+type StoredSession = {
+  roomId: string;
+  name: string;
+  isPrivate: boolean;
+  avatarId?: string;
+  gameMode?: GameMode;
+  asSpectator?: boolean;
+};
+
+function saveSession(
+  roomId: string,
+  name: string,
+  isPrivate: boolean,
+  avatarId?: string,
+  gameMode: GameMode = 'CLASSIC',
+  asSpectator: boolean = false,
+) {
+  const session: StoredSession = { roomId, name, isPrivate, avatarId, gameMode, asSpectator };
+  sessionStorage.setItem('euchre_session', JSON.stringify(session));
 }
 
 function clearSession() {
   sessionStorage.removeItem('euchre_session');
 }
 
-function getSession(): { roomId: string; name: string; isPrivate: boolean; avatarId?: string; gameMode?: GameMode } | null {
+function getSession(): StoredSession | null {
   try {
     const raw = sessionStorage.getItem('euchre_session');
     return raw ? JSON.parse(raw) : null;
@@ -23,6 +41,7 @@ function getSession(): { roomId: string; name: string; isPrivate: boolean; avata
 }
 
 function App() {
+  const [introComplete, setIntroComplete] = useState(false);
   const [user, setUser] = useState<{ username: string; displayName: string; userId?: string } | null>(getStoredUser);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,11 +78,14 @@ function App() {
     socket.on('connect', () => {
       const session = getSession();
       if (session) {
-        socket.emit('joinRoom', session.roomId, session.name, session.isPrivate, session.avatarId, session.gameMode || 'CLASSIC');
+        if (session.asSpectator) {
+          socket.emit('joinAsSpectator', session.roomId, session.name, session.avatarId);
+        } else {
+          socket.emit('joinRoom', session.roomId, session.name, session.isPrivate, session.avatarId, session.gameMode || 'CLASSIC');
+        }
       }
     });
 
-    // Auto-reconnect on page refresh if session + user exist
     const session = getSession();
     const savedUser = getStoredUser();
     if (session && savedUser) {
@@ -77,25 +99,38 @@ function App() {
     };
   }, []);
 
-  if (!user) {
-    return <Login onLogin={handleLogin} />;
-  }
-
   return (
-    <div className="app">
-      {error && <div style={{
-        position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)',
-        background: 'red', padding: '10px', color: 'white', zIndex: 9999
-      }}>
-        {error}
-      </div>}
-
-      {!gameState ? (
-        <Lobby onJoin={saveSession} defaultName={user.displayName} defaultAvatarId={localStorage.getItem('avatarId') || undefined} onLogout={handleLogout} />
+    <>
+      {/* Login / lobby sit on the dark spade background. Game table paints its own green felt. */}
+      {!user ? (
+        <div className="app-dark-bg app-shell">
+          <Login onLogin={handleLogin} />
+        </div>
       ) : (
-        <GameTable gameState={gameState} myId={socket.id || ''} onLeave={handleLeaveRoom} />
+        <div className={`app-shell ${!gameState ? 'app-dark-bg' : ''}`}>
+          {error && (
+            <div className="app-error-toast">{error}</div>
+          )}
+
+          {!gameState ? (
+            <Lobby
+              onJoin={saveSession}
+              defaultName={user.displayName}
+              defaultAvatarId={localStorage.getItem('avatarId') || undefined}
+              onLogout={handleLogout}
+            />
+          ) : (
+            <GameTable gameState={gameState} myId={socket.id || ''} onLeave={handleLeaveRoom} />
+          )}
+        </div>
       )}
-    </div>
+
+      {/* Intro video sits on top; login is already rendered underneath so the fade
+          reveals the login screen instead of a flash of the old green body bg. */}
+      {!introComplete && (
+        <LoadingScreen onComplete={() => setIntroComplete(true)} />
+      )}
+    </>
   );
 }
 

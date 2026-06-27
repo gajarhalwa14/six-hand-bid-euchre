@@ -2,8 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/EuchreLogo.png" />
+    <!-- viewport-fit=cover lets the page extend under the notch/home-indicator
+         so `env(safe-area-inset-*)` is non-zero in CSS. Required for iOS apps. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <!-- iOS standalone web app metadata (also useful for "Add to Home Screen") -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Bid Euchre" />
+    <meta name="theme-color" content="#0a0e17" />
     <title>Six-Hand Bid Euchre</title>
   </head>
   <body>

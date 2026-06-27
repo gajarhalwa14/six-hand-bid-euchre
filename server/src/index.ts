@@ -128,9 +128,26 @@ function sanitize(game: Game, playerId: string): GameState {
     const myIdx = state.players.findIndex(p => p.id === playerId);
     // Only the recipient ever sees their hand and TRAM-eligibility.
     const canClaimRest = myIdx !== -1 ? game.canClaimRest(myIdx) : false;
+
+    // During BIDDING, the suit chosen for a shoot bid is private to the
+    // bidder — opponents should only see "Shooting", not the suit. Once
+    // bidding ends and the shoot is the winning bid, the suit is exposed
+    // via `state.trump` and the bid bubble disappears anyway, so we only
+    // need to mask while in the BIDDING phase.
+    const sanitizedBids = state.phase === 'BIDDING'
+        ? state.bids.map(b => {
+            const isShoot = b.amount === 9 || (state.gameMode === 'MEGA_DRAFT' && b.amount === 10);
+            if (isShoot && b.playerIndex !== myIdx) {
+                return { ...b, suit: undefined };
+            }
+            return b;
+        })
+        : state.bids;
+
     return {
         ...state,
         canClaimRest,
+        bids: sanitizedBids,
         players: state.players.map(p => {
             if (p.id === playerId) return p;
             return { ...p, hand: [] }; // Hide other hands
@@ -140,6 +157,36 @@ function sanitize(game: Game, playerId: string): GameState {
 
 function getMaxPlayers(mode: GameMode): number {
     return mode === 'MEGA_DRAFT' ? 4 : 6;
+}
+
+/**
+ * Tear down a room and free its resources. Safe to call on a missing room.
+ */
+function deleteRoom(roomId: string, reason: string) {
+    const game = rooms.get(roomId);
+    if (!game) return;
+    console.log(`[${roomId}] Deleting room: ${reason}`);
+    game.dispose();
+    rooms.delete(roomId);
+    roomChats.delete(roomId);
+}
+
+/**
+ * Called after a socket leaves / disconnects from a room. If no humans
+ * remain (neither as connected sockets nor as human players in game state),
+ * delete the room so bots don't keep playing themselves forever.
+ */
+function cleanupRoomIfAbandoned(roomId: string) {
+    const game = rooms.get(roomId);
+    if (!game) return;
+
+    const socketRoom = io.sockets.adapter.rooms.get(roomId);
+    const connectedSocketCount = socketRoom?.size ?? 0;
+    const humanPlayerCount = game.state.players.filter(p => !p.isBot).length;
+
+    if (connectedSocketCount === 0 && humanPlayerCount === 0) {
+        deleteRoom(roomId, 'all humans have left');
+    }
 }
 
 io.on('connection', (socket) => {
@@ -406,9 +453,17 @@ io.on('connection', (socket) => {
                     game.state.hostId = nextHuman?.id ?? game.state.players[0].id;
                 }
                 broadcastState(roomId, game);
+            } else {
+                // Not a seated player — maybe a spectator leaving.
+                game.removeSpectator(socket.id);
+                broadcastState(roomId, game);
             }
         }
         socket.leave(roomId);
+        // After the socket has left, check whether anyone is still here.
+        // This is the case the user explicitly cares about: when all humans
+        // leave a room, do NOT keep a bot-only game running forever.
+        cleanupRoomIfAbandoned(roomId);
     });
 
     socket.on('requestSeatSwap', (targetPlayerIndex) => {
@@ -463,6 +518,101 @@ io.on('connection', (socket) => {
         if (fromSocket) fromSocket.emit('seatSwapResult', `Seat swap with ${game.state.players[myIndex].name} accepted!`);
         socket.emit('seatSwapResult', `Seat swap with ${fromPlayer.name} accepted!`);
         broadcastState(roomId, game);
+    });
+
+    socket.on('joinAsSpectator', (roomId, name, avatarId) => {
+        (socket as any)._playerName = name;
+        (socket as any)._avatarId = avatarId || undefined;
+
+        let game = rooms.get(roomId);
+        if (!game) {
+            socket.emit('error', `Room ${roomId} does not exist`);
+            return;
+        }
+
+        // If they were previously seated under the same name in this room,
+        // promote that record back to them (avoid duplicate ghosts).
+        const existingPlayer = game.state.players.find(p => p.name === name);
+        if (existingPlayer && existingPlayer.isBot === false) {
+            // They were a player here — rejoin as player rather than spectator.
+            existingPlayer.id = socket.id;
+            existingPlayer.isConnected = true;
+            if (avatarId) existingPlayer.avatarId = avatarId;
+        } else {
+            game.addSpectator(socket.id, name, avatarId);
+        }
+
+        socket.join(roomId);
+        game.markActivity();
+        socket.emit('chatHistory', roomChats.get(roomId) ?? []);
+        socket.emit('roomJoined', roomId);
+        broadcastState(roomId, game);
+        console.log(`[${roomId}] "${name}" joined as spectator`);
+    });
+
+    socket.on('requestSwapWithSpectator', (spectatorId) => {
+        const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
+        if (!roomId) return;
+        const game = rooms.get(roomId);
+        if (!game) return;
+
+        const check = game.canSwapWithSpectator(socket.id, spectatorId);
+        if (!check.ok) {
+            socket.emit('error', check.error || 'Cannot swap');
+            return;
+        }
+
+        const player = game.state.players.find(p => p.id === socket.id)!;
+        const targetSocket = io.sockets.sockets.get(spectatorId);
+        if (!targetSocket) {
+            socket.emit('error', 'That spectator is no longer connected');
+            return;
+        }
+
+        targetSocket.emit('spectatorSwapOffer', {
+            fromPlayerId: player.id,
+            fromPlayerName: player.name,
+            fromPlayerSeatIndex: player.seatIndex,
+        });
+        const specName = game.state.spectators?.find(s => s.id === spectatorId)?.name ?? 'spectator';
+        socket.emit('spectatorSwapResult', `Swap request sent to ${specName}`);
+    });
+
+    socket.on('respondSpectatorSwap', (fromPlayerId, accepted) => {
+        const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
+        if (!roomId) return;
+        const game = rooms.get(roomId);
+        if (!game) return;
+
+        const fromSocket = io.sockets.sockets.get(fromPlayerId);
+        const fromPlayer = game.state.players.find(p => p.id === fromPlayerId);
+        const myName = game.state.spectators?.find(s => s.id === socket.id)?.name ?? 'spectator';
+
+        if (!accepted) {
+            if (fromSocket) fromSocket.emit('spectatorSwapResult', `${myName} declined your swap request`);
+            return;
+        }
+
+        if (!fromPlayer) {
+            socket.emit('error', 'That player is no longer in the room');
+            return;
+        }
+
+        // Re-validate the swap conditions (the offer might be stale).
+        const check = game.canSwapWithSpectator(fromPlayerId, socket.id);
+        if (!check.ok) {
+            socket.emit('error', check.error || 'Swap no longer possible');
+            return;
+        }
+
+        game.executeSpectatorSwap(fromPlayerId, socket.id);
+        if (fromSocket) fromSocket.emit('spectatorSwapResult', `${myName} accepted your swap request`);
+        socket.emit('spectatorSwapResult', `You took ${fromPlayer.name}'s seat`);
+        broadcastState(roomId, game);
+        // The old player is now a spectator; the new player got the seat.
+        // Bot turn might be triggered if it's now the new player's turn — but
+        // since the seat index didn't change, turnIndex still points at the
+        // right person and no bot trigger is needed.
     });
 
     socket.on('takeOverBot', (botIndex) => {
@@ -559,6 +709,35 @@ io.on('connection', (socket) => {
         roomChats.set(roomId, history);
 
         io.to(roomId).emit('chatMessage', message);
+    });
+
+    // `disconnecting` fires while socket.rooms is still populated so we can
+    // capture which rooms this socket was in. We use it to clean up the
+    // matching player record (and spectator record) and then schedule an
+    // abandonment check.
+    socket.on('disconnecting', () => {
+        const wasInRoomIds = Array.from(socket.rooms).filter(r => r !== socket.id);
+        for (const roomId of wasInRoomIds) {
+            const game = rooms.get(roomId);
+            if (!game) continue;
+            const player = game.state.players.find(p => p.id === socket.id);
+            if (player) {
+                player.isConnected = false;
+            }
+            // Spectators leave the spectator list when they disconnect — there's
+            // no value in keeping a ghost since they have no seat to reconnect
+            // to. (If they come back, they can spectate again.)
+            game.removeSpectator(socket.id);
+            // Broadcast to everyone else that the spectator list changed.
+            broadcastState(roomId, game);
+        }
+        // Defer to next tick so the socket has actually been removed from
+        // io.sockets.adapter.rooms before we count remaining sockets.
+        setImmediate(() => {
+            for (const roomId of wasInRoomIds) {
+                cleanupRoomIfAbandoned(roomId);
+            }
+        });
     });
 
     socket.on('disconnect', () => {

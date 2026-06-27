@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import type { GameState, Card as CardType, Suit, ChatMessage } from '../types';
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+import type { GameState, Card as CardType, Suit, ChatMessage, SpectatorSwapOffer } from '../types';
 import { determineTrickWinner, getEffectiveSuit } from '@shared/CardUtils';
 import { Card } from './Card';
 import { Controls } from './Controls';
@@ -17,6 +17,13 @@ const SUIT_COLOR: Record<string, string> = {
     Spades: '#1a1a1a', Hearts: '#cc1111', Clubs: '#1a1a1a', Diamonds: '#cc1111'
 };
 
+// Same suits, but tuned for the dark HUD background. The original near-black
+// values are unreadable on dark, so use white for black suits and a brighter
+// red for hearts/diamonds.
+const HUD_SUIT_COLOR: Record<string, string> = {
+    Spades: '#ffffff', Hearts: '#ff5b6b', Clubs: '#ffffff', Diamonds: '#ff5b6b'
+};
+
 const RANK_SORT: Record<string, number> = { 'A': 6, 'K': 5, 'Q': 4, 'J': 3, '10': 2, '9': 1 };
 
 function isShootBid(gameState: GameState): boolean {
@@ -26,8 +33,19 @@ function isShootBid(gameState: GameState): boolean {
     return amount === 9;
 }
 
+function isBidAmountShoot(amount: number | undefined, gameMode: GameState['gameMode']): boolean {
+    if (amount === undefined) return false;
+    if (gameMode === 'MEGA_DRAFT') return amount === 9 || amount === 10;
+    return amount === 9;
+}
+
 function getShootLabel(gameState: GameState): string {
     if (gameState.gameMode === 'MEGA_DRAFT' && gameState.winningBid?.amount === 10) return '1-Card Shoot';
+    return 'Shoot';
+}
+
+function getShootLabelForAmount(amount: number, gameMode: GameState['gameMode']): string {
+    if (gameMode === 'MEGA_DRAFT' && amount === 10) return '1-Card Shoot';
     return 'Shoot';
 }
 
@@ -75,13 +93,25 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     const [dealStep, setDealStep] = useState(-1);
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [chatInput, setChatInput] = useState('');
-    const [chatMinimized, setChatMinimized] = useState(false);
-    const [chatPos, setChatPos] = useState<{ x: number; y: number }>({ x: 12, y: 52 });
+    // Default to minimized on small screens so chat doesn't cover the table
+    const isInitiallyMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+    const [chatMinimized, setChatMinimized] = useState(isInitiallyMobile);
+    const [chatPos, setChatPos] = useState<{ x: number; y: number } | null>(null);
     const [draggingChat, setDraggingChat] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [chatFlash, setChatFlash] = useState(false);
     const [hoveredCardIndex, setHoveredCardIndex] = useState<number | null>(null);
+    const [pendingSwapOffer, setPendingSwapOffer] = useState<SpectatorSwapOffer | null>(null);
+    const [swapToast, setSwapToast] = useState<string | null>(null);
+    const swapToastTimeoutRef = useRef<number | null>(null);
     const chatMessagesRef = useRef<HTMLDivElement | null>(null);
-    const dragStartRef = useRef<{ mouseX: number; mouseY: number; startX: number; startY: number } | null>(null);
+    const chatPanelRef = useRef<HTMLDivElement | null>(null);
+    const dragStartRef = useRef<{ pointerX: number; pointerY: number; startX: number; startY: number } | null>(null);
+    const flashTimeoutRef = useRef<number | null>(null);
+    const chatMinimizedRef = useRef(chatMinimized);
     const prevPhaseRef = useRef(gameState.phase);
+
+    useEffect(() => { chatMinimizedRef.current = chatMinimized; }, [chatMinimized]);
 
     useEffect(() => {
         setSelectedCardIds([]);
@@ -122,40 +152,157 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
         });
         socket.on('chatMessage', (message) => {
             setChatMessages(prev => [...prev, message]);
+            // Notify on incoming messages from others (not your own)
+            if (message.senderId !== myId) {
+                setChatFlash(true);
+                if (flashTimeoutRef.current !== null) {
+                    window.clearTimeout(flashTimeoutRef.current);
+                }
+                flashTimeoutRef.current = window.setTimeout(() => setChatFlash(false), 1400);
+                // Only count as unread when the chat is currently minimized
+                if (chatMinimizedRef.current) {
+                    setUnreadCount(c => c + 1);
+                }
+            }
         });
         return () => {
             socket.off('chatHistory');
             socket.off('chatMessage');
         };
+    }, [myId]);
+
+    // Spectator <-> player swap offer/response side channels.
+    useEffect(() => {
+        const onOffer = (offer: SpectatorSwapOffer) => {
+            // Stash the offer so we render a modal; spectator chooses Accept/Decline.
+            setPendingSwapOffer(offer);
+        };
+        const onResult = (msg: string) => {
+            // Brief toast in the corner. Clears any prior toast cleanly.
+            setSwapToast(msg);
+            if (swapToastTimeoutRef.current !== null) {
+                window.clearTimeout(swapToastTimeoutRef.current);
+            }
+            swapToastTimeoutRef.current = window.setTimeout(() => setSwapToast(null), 3500);
+        };
+        socket.on('spectatorSwapOffer', onOffer);
+        socket.on('spectatorSwapResult', onResult);
+        return () => {
+            socket.off('spectatorSwapOffer', onOffer);
+            socket.off('spectatorSwapResult', onResult);
+        };
     }, []);
 
+    const respondToSwap = (accepted: boolean) => {
+        if (!pendingSwapOffer) return;
+        socket.emit('respondSpectatorSwap', pendingSwapOffer.fromPlayerId, accepted);
+        setPendingSwapOffer(null);
+    };
+
+    const askToSwapWithSpectator = (spectatorId: string, spectatorName: string) => {
+        if (!window.confirm(`Offer your seat to ${spectatorName}? They'll need to accept.`)) return;
+        socket.emit('requestSwapWithSpectator', spectatorId);
+    };
+
+    // Reset unread count when chat is opened
     useEffect(() => {
-        if (chatMessagesRef.current) {
-            chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+        if (!chatMinimized) {
+            setUnreadCount(0);
         }
-    }, [chatMessages]);
+    }, [chatMinimized]);
+
+    // Scroll chat to bottom whenever messages change AND when chat is reopened
+    useLayoutEffect(() => {
+        if (chatMinimized) return;
+        const el = chatMessagesRef.current;
+        if (el) {
+            el.scrollTop = el.scrollHeight;
+        }
+    }, [chatMessages, chatMinimized]);
+
+    // Initialize / re-clamp chat panel position so it always fits in the viewport.
+    // Runs on mount and whenever the chat is expanded/minimized (which changes its size).
+    useLayoutEffect(() => {
+        const panel = chatPanelRef.current;
+        if (!panel) return;
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+
+        // Defer to next frame so the panel reflects the new minimized state.
+        const id = window.requestAnimationFrame(() => {
+            const w = panel.offsetWidth;
+            const h = panel.offsetHeight;
+            const maxX = Math.max(8, window.innerWidth - w - 8);
+            const maxY = Math.max(8, window.innerHeight - h - 8);
+
+            setChatPos(prev => {
+                if (prev === null) {
+                    // First-time positioning
+                    if (isMobile) {
+                        return { x: 8, y: maxY };
+                    }
+                    return { x: maxX, y: 56 };
+                }
+                return { x: Math.min(prev.x, maxX), y: Math.min(prev.y, maxY) };
+            });
+        });
+        return () => window.cancelAnimationFrame(id);
+    }, [chatMinimized]);
+
+    // Keep chat in viewport when window resizes
+    useEffect(() => {
+        const onResize = () => {
+            const panel = chatPanelRef.current;
+            if (!panel) return;
+            const w = panel.offsetWidth;
+            const h = panel.offsetHeight;
+            const maxX = Math.max(8, window.innerWidth - w - 8);
+            const maxY = Math.max(8, window.innerHeight - h - 8);
+            setChatPos(prev => prev
+                ? { x: Math.min(prev.x, maxX), y: Math.min(prev.y, maxY) }
+                : prev);
+        };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
 
     useEffect(() => {
         if (!draggingChat) return;
 
-        const onMove = (e: MouseEvent) => {
+        const move = (clientX: number, clientY: number) => {
             const start = dragStartRef.current;
             if (!start) return;
-            const dx = e.clientX - start.mouseX;
-            const dy = e.clientY - start.mouseY;
-            setChatPos({ x: Math.max(8, start.startX + dx), y: Math.max(8, start.startY + dy) });
+            const dx = clientX - start.pointerX;
+            const dy = clientY - start.pointerY;
+            const panel = chatPanelRef.current;
+            const w = panel?.offsetWidth ?? 280;
+            const h = panel?.offsetHeight ?? 60;
+            const maxX = Math.max(8, window.innerWidth - w - 8);
+            const maxY = Math.max(8, window.innerHeight - h - 8);
+            const x = Math.min(maxX, Math.max(8, start.startX + dx));
+            const y = Math.min(maxY, Math.max(8, start.startY + dy));
+            setChatPos({ x, y });
         };
 
+        const onMouseMove = (e: MouseEvent) => move(e.clientX, e.clientY);
+        const onTouchMove = (e: TouchEvent) => {
+            if (e.touches.length === 0) return;
+            move(e.touches[0].clientX, e.touches[0].clientY);
+            e.preventDefault();
+        };
         const onUp = () => {
             setDraggingChat(false);
             dragStartRef.current = null;
         };
 
-        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mousemove', onMouseMove);
         window.addEventListener('mouseup', onUp);
+        window.addEventListener('touchmove', onTouchMove, { passive: false });
+        window.addEventListener('touchend', onUp);
         return () => {
-            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onUp);
+            window.removeEventListener('touchmove', onTouchMove);
+            window.removeEventListener('touchend', onUp);
         };
     }, [draggingChat]);
 
@@ -169,9 +316,23 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
     const onChatHeaderMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
         if ((e.target as HTMLElement).closest('.chat-min-btn')) return;
+        if (!chatPos) return;
         dragStartRef.current = {
-            mouseX: e.clientX,
-            mouseY: e.clientY,
+            pointerX: e.clientX,
+            pointerY: e.clientY,
+            startX: chatPos.x,
+            startY: chatPos.y
+        };
+        setDraggingChat(true);
+    };
+
+    const onChatHeaderTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+        if ((e.target as HTMLElement).closest('.chat-min-btn')) return;
+        if (!chatPos || e.touches.length === 0) return;
+        const touch = e.touches[0];
+        dragStartRef.current = {
+            pointerX: touch.clientX,
+            pointerY: touch.clientY,
             startX: chatPos.x,
             startY: chatPos.y
         };
@@ -179,6 +340,9 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     };
 
     const mySeat = myPlayer?.seatIndex ?? (myIndex >= 0 ? myIndex : -1);
+    const spectators = gameState.spectators ?? [];
+    const isSpectator = spectators.some(s => s.id === myId);
+    const amSeatedHuman = myIndex !== -1 && myPlayer && !myPlayer.isBot;
 
     const sortedHand = useMemo(() => {
         if (!myPlayer) return [];
@@ -288,6 +452,23 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
         ? ['bottom', 'left', 'top', 'right']
         : ['bottom', 'bottom-left', 'top-left', 'top', 'top-right', 'bottom-right'];
 
+    // Seated players rotate the table so their seat is at the bottom (hidden — hand
+    // is shown in .my-hand). Spectators get a fixed overview so all seats are visible.
+    const viewSeat = isSpectator ? null : (myPlayer?.seatIndex ?? (myIndex >= 0 ? myIndex : 0));
+
+    const seatToPosition = (seatNum: number) => {
+        if (viewSeat === null) return POSITIONS[seatNum];
+        return POSITIONS[(seatNum - viewSeat + playerCount) % playerCount];
+    };
+
+    const playerIndexToTrickPosition = (playerIndex: number) => {
+        if (isSpectator) {
+            return playerCount === 4 ? [0, 2, 3, 5][playerIndex] : playerIndex;
+        }
+        const relIndex = (playerIndex - myIndex + playerCount) % playerCount;
+        return playerCount === 4 ? [0, 2, 3, 5][relIndex] : relIndex;
+    };
+
     // Calculate Tricks Taken
     const tricksA = gameState.tricksHistory.filter(t => gameState.players[t.winnerIndex!].team === 'A').length;
     const tricksB = gameState.tricksHistory.filter(t => gameState.players[t.winnerIndex!].team === 'B').length;
@@ -305,7 +486,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     const winningPlay = winningCardIndex !== -1 ? gameState.currentTrick.plays[winningCardIndex] : null;
 
     return (
-        <div className="table">
+        <div className={`table ${isSpectator ? 'spectator-view' : ''}`}>
             {/* Back to Home */}
             <button className="back-home-btn" onClick={onLeave}>
                 &larr; Leave Game
@@ -342,7 +523,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                     <div className="hud-trump-row">
                         <span className="hud-trump-label">Trump</span>
                         {gameState.trump ? (
-                            <span className="hud-trump-value" style={{ color: SUIT_COLOR[gameState.trump] || '#fff' }}>
+                            <span className="hud-trump-value" style={{ color: HUD_SUIT_COLOR[gameState.trump] || '#fff' }}>
                                 {SUIT_SYMBOL[gameState.trump]}
                             </span>
                         ) : (
@@ -358,7 +539,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                                         <>
                                             {gameState.winningBid.amount}
                                             {gameState.winningBid.type === 'SUIT' && gameState.winningBid.suit
-                                                ? <span style={{ color: SUIT_COLOR[gameState.winningBid.suit] }}> {SUIT_SYMBOL[gameState.winningBid.suit]}</span>
+                                                ? <span style={{ color: HUD_SUIT_COLOR[gameState.winningBid.suit] }}> {SUIT_SYMBOL[gameState.winningBid.suit]}</span>
                                                 : ` ${gameState.winningBid.type}`}
                                         </>
                                     )}
@@ -369,15 +550,29 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             </div>
 
             <div
-                className={`chat-panel ${draggingChat ? 'dragging' : ''} ${chatMinimized ? 'minimized' : ''}`}
-                style={{ left: `${chatPos.x}px`, top: `${chatPos.y}px` }}
+                ref={chatPanelRef}
+                className={`chat-panel ${draggingChat ? 'dragging' : ''} ${chatMinimized ? 'minimized' : ''} ${chatFlash ? 'flash' : ''}`}
+                style={chatPos ? { left: `${chatPos.x}px`, top: `${chatPos.y}px` } : { visibility: 'hidden' }}
             >
-                <div className="chat-header" onMouseDown={onChatHeaderMouseDown}>
-                    <span>Room Chat</span>
+                <div
+                    className="chat-header"
+                    onMouseDown={onChatHeaderMouseDown}
+                    onTouchStart={onChatHeaderTouchStart}
+                >
+                    <span className="chat-title">
+                        <span className="chat-icon" aria-hidden="true">💬</span>
+                        <span>Chat</span>
+                        {unreadCount > 0 && chatMinimized && (
+                            <span className="chat-unread-badge" aria-label={`${unreadCount} unread messages`}>
+                                {unreadCount > 99 ? '99+' : unreadCount}
+                            </span>
+                        )}
+                    </span>
                     <button
                         className="chat-min-btn"
                         onClick={() => setChatMinimized(v => !v)}
                         title={chatMinimized ? 'Expand chat' : 'Minimize chat'}
+                        aria-label={chatMinimized ? 'Expand chat' : 'Minimize chat'}
                     >
                         {chatMinimized ? '▢' : '—'}
                     </button>
@@ -412,14 +607,18 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
             {/* Dealing Animation */}
             {gameState.phase === 'DEALING' && (
-                <DealingAnimation dealerIndex={gameState.dealerIndex} myIndex={myIndex} currentStep={dealStep} playerCount={playerCount} />
+                <DealingAnimation
+                    dealerIndex={gameState.dealerIndex}
+                    myIndex={myIndex}
+                    currentStep={dealStep}
+                    playerCount={playerCount}
+                    isSpectator={isSpectator}
+                />
             )}
 
             {/* Players & Seats */}
             {Array.from({ length: playerCount }, (_, seatNum) => seatNum).map((seatNum) => {
-                const mySeat = myPlayer?.seatIndex ?? myIndex;
-                const relIndex = (seatNum - mySeat + playerCount) % playerCount;
-                const pos = POSITIONS[relIndex];
+                const pos = seatToPosition(seatNum);
 
                 const p = gameState.players.find(pl => pl.seatIndex === seatNum)
                     // Fallback for older states or public rooms before sorting
@@ -448,7 +647,13 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
                 let bidText: React.ReactNode = null;
                 if (gameState.phase === 'BIDDING' && playerBid) {
-                    if (playerBid.type === 'SUIT' && playerBid.suit) {
+                    const bidIsShoot = isBidAmountShoot(playerBid.amount, gameState.gameMode);
+                    const isMyBid = pIdx === myIndex;
+                    // Hide shoot details (amount + suit) from non-bidders so opponents
+                    // don't know what suit will be trump until bidding resolves.
+                    if (bidIsShoot && !isMyBid) {
+                        bidText = getShootLabelForAmount(playerBid.amount, gameState.gameMode);
+                    } else if (playerBid.type === 'SUIT' && playerBid.suit) {
                         const sym = SUIT_SYMBOL[playerBid.suit] || playerBid.suit;
                         const col = SUIT_COLOR[playerBid.suit] || '#000';
                         bidText = <>{playerBid.amount} <span style={{ color: col }}>{sym}</span></>;
@@ -459,18 +664,36 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
                 const avatarDef = p.isBot ? BOT_AVATAR : getAvatarById(p.avatarId);
 
+                const hasBidIndicator = !!bidText;
+                const isDealer = gameState.phase !== 'LOBBY' && pIdx === gameState.dealerIndex;
+                const isBidder = gameState.declarerIndex !== null
+                    && gameState.players[gameState.declarerIndex]?.id === p.id
+                    && gameState.phase !== 'LOBBY';
+                const hasBadge = (gameState.phase === 'PRE_BID_DISCARD' && isLeadBidder)
+                    || isDealer
+                    || isBidder;
+
                 return (
-                    <div key={p.id} className={`player-seat ${pos} ${isTurn ? 'turn' : ''} ${teamClass}`}>
+                    <div key={p.id} className={`player-seat ${pos} ${isTurn ? 'turn' : ''} ${teamClass} ${hasBidIndicator ? 'has-bid' : ''} ${hasBadge ? 'has-badge' : ''}`}>
                         <div className="avatar" style={avatarDef ? { background: avatarDef.bg } : undefined}>
                             <span className="avatar-emoji">{avatarDef ? avatarDef.emoji : p.name.charAt(0).toUpperCase()}</span>
                         </div>
                         <div className="player-name">{p.name} {p.isBot ? '🤖' : ''}</div>
                         {bidText && <div className="bid-bubble">{bidText}</div>}
-                        {gameState.phase !== 'LOBBY' && <div className="hand-count">{p.hand.length}</div>}
-                        {gameState.phase === 'PRE_BID_DISCARD' && isLeadBidder && <div className="badge">First Bid</div>}
-                        {gameState.declarerIndex !== null && gameState.players[gameState.declarerIndex]?.id === p.id && (
-                            <div className="badge">{isShootBid(gameState) ? 'Shooting' : 'Bidder'}</div>
-                        )}
+                        <div className={`team-label team-${p.team}`}>TEAM {p.team}</div>
+                        <div className="player-role-badges">
+                            {gameState.phase === 'PRE_BID_DISCARD' && isLeadBidder && (
+                                <div className="badge badge-first-bid">First Bid</div>
+                            )}
+                            {isDealer && (
+                                <div className="badge badge-dealer">Dealer</div>
+                            )}
+                            {isBidder && (
+                                <div className="badge badge-bidder">
+                                    {isShootBid(gameState) ? 'Shooting' : 'Bidder'}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 );
             })}
@@ -478,20 +701,18 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             {/* Center Trick */}
             <div className="trick-zone">
                 {gameState.currentTrick.plays.map((play) => {
-                    const relIndex = (play.playerIndex - (myIndex >= 0 ? myIndex : 0) + playerCount) % playerCount;
-                    const trickPosIndex = playerCount === 4 ? [0, 2, 3, 5][relIndex] : relIndex;
+                    const trickPosIndex = playerIndexToTrickPosition(play.playerIndex);
                     const isWinning = winningPlay && play.playerIndex === winningPlay.playerIndex;
                     const teamClass = gameState.players[play.playerIndex].team === 'A' ? 'team-A' : 'team-B';
 
                     const winnerIdx = gameState.currentTrick.winnerIndex;
-                    const winnerRel = winnerIdx !== null ? (winnerIdx - (myIndex >= 0 ? myIndex : 0) + playerCount) % playerCount : -1;
-                    const collectTarget = winnerRel === -1 ? -1 : (playerCount === 4 ? [0, 2, 3, 5][winnerRel] : winnerRel);
+                    const collectTarget = winnerIdx !== null ? playerIndexToTrickPosition(winnerIdx) : -1;
 
                     return (
                         <div
                             key={play.card.id}
                             className={`trick-card pos-${trickPosIndex} ${teamClass} ${isWinning ? 'winning' : ''} ${collectingTrick ? 'collecting' : ''}`}
-                            style={collectingTrick && winnerRel >= 0 ? {
+                            style={collectingTrick && collectTarget >= 0 ? {
                                 '--collect-target': collectTarget,
                             } as React.CSSProperties : undefined}
                             data-collect-target={collectTarget}
@@ -502,7 +723,8 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 })}
             </div>
 
-            {/* My Hand */}
+            {/* My Hand — only for seated players */}
+            {!isSpectator && (
             <div className="my-hand">
                 {displayHand.map((card, index) => {
                     const keyboardHovered = isMyTurnToPlay && hoveredCardIndex === index;
@@ -526,11 +748,14 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                     );
                 })}
             </div>
+            )}
 
-            {/* Controls Overlay */}
+            {/* Controls Overlay — seated players only */}
+            {!isSpectator && (
             <div className="controls-overlay">
                 <Controls gameState={gameState} myIndex={myIndex} selectedCardIds={selectedCardIds} onAction={clearSelection} />
             </div>
+            )}
 
             {/* Game Over Overlay */}
             {gameState.phase === 'GAME_OVER' && (
@@ -574,8 +799,79 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 </div>
             )}
 
-            {/* Bot Takeover Overlay */}
-            {gameState.phase !== 'LOBBY' && gameState.phase !== 'GAME_OVER' && myIndex === -1 && (
+            {/* Spectators panel (visible to everyone, including spectators themselves). */}
+            {(spectators.length > 0 || isSpectator) && (
+                <div className="spectators-panel">
+                    <div className="spectators-header">
+                        <span>👀 Spectators</span>
+                        <span className="spectators-count">{spectators.length}</span>
+                    </div>
+                    {isSpectator && (
+                        <div className="spectator-self-badge">You are watching</div>
+                    )}
+                    <div className="spectators-list">
+                        {spectators.length === 0 ? (
+                            <div className="spectators-empty">No spectators yet</div>
+                        ) : (
+                            spectators.map(s => {
+                                const isMe = s.id === myId;
+                                return (
+                                    <div key={s.id} className={`spectator-item ${isMe ? 'self' : ''}`}>
+                                        <span className="spectator-emoji" aria-hidden="true">
+                                            {(s.avatarId && getAvatarById(s.avatarId)?.emoji) || '👤'}
+                                        </span>
+                                        <span className="spectator-name">{s.name}{isMe ? ' (you)' : ''}</span>
+                                        {/* Only seated humans can offer their seat. */}
+                                        {amSeatedHuman && !isMe && (
+                                            <button
+                                                className="spectator-swap-btn"
+                                                title={`Offer your seat to ${s.name}`}
+                                                onClick={() => askToSwapWithSpectator(s.id, s.name)}
+                                            >
+                                                ↔
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Swap-offer modal: shown to the spectator the moment a player invites them. */}
+            {pendingSwapOffer && (
+                <div className="swap-offer-overlay">
+                    <div className="swap-offer-modal">
+                        <h2>Seat Swap Request</h2>
+                        <p>
+                            <strong>{pendingSwapOffer.fromPlayerName}</strong>
+                            {pendingSwapOffer.fromPlayerSeatIndex !== undefined
+                                ? ` (seat ${pendingSwapOffer.fromPlayerSeatIndex + 1})`
+                                : ''}
+                            {' '}wants to give you their seat. Accept to take their hand and join the game.
+                        </p>
+                        <div className="swap-offer-actions">
+                            <button className="btn-secondary" onClick={() => respondToSwap(false)}>
+                                Decline
+                            </button>
+                            <button className="btn-primary" onClick={() => respondToSwap(true)}>
+                                Accept &amp; Take Seat
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Toast for spectator swap results (sent / declined / accepted). */}
+            {swapToast && (
+                <div className="swap-toast">{swapToast}</div>
+            )}
+
+            {/* Bot Takeover Overlay (only shown for joiners who came in via the
+                normal join path mid-game, NOT for explicit spectators who should
+                be able to just watch). */}
+            {gameState.phase !== 'LOBBY' && gameState.phase !== 'GAME_OVER' && myIndex === -1 && !isSpectator && (
                 <div className="bot-takeover-overlay">
                     <div className="bot-takeover-modal">
                         <h2>Game In Progress</h2>

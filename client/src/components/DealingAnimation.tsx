@@ -6,6 +6,7 @@ interface Props {
     myIndex: number;
     currentStep: number;
     playerCount: number;
+    isSpectator?: boolean;
 }
 
 const POSITIONS = ['bottom', 'bottom-left', 'top-left', 'top', 'top-right', 'bottom-right'];
@@ -27,7 +28,7 @@ interface DealEvent {
     pairIndex: number;
 }
 
-export const DealingAnimation: React.FC<Props> = ({ dealerIndex, myIndex, currentStep, playerCount }) => {
+export const DealingAnimation: React.FC<Props> = ({ dealerIndex, myIndex, currentStep, playerCount, isSpectator = false }) => {
     const events = useMemo(() => {
         const allEvents: DealEvent[] = [];
         const pairRounds = playerCount === 4 ? 6 : 4;
@@ -40,10 +41,18 @@ export const DealingAnimation: React.FC<Props> = ({ dealerIndex, myIndex, curren
         return allEvents;
     }, [dealerIndex, playerCount]);
 
-    const mySeat = myIndex >= 0 ? myIndex : 0;
+    const layoutPositions = playerCount === 4
+        ? ['bottom', 'left', 'top', 'right']
+        : POSITIONS;
 
-    const dealerRel = (dealerIndex - mySeat + playerCount) % playerCount;
-    const dealerPos = POSITIONS[dealerRel];
+    const mySeat = isSpectator ? 0 : (myIndex >= 0 ? myIndex : 0);
+
+    const seatToLayoutPos = (seat: number) => {
+        if (isSpectator) return layoutPositions[seat];
+        return layoutPositions[(seat - mySeat + playerCount) % playerCount];
+    };
+
+    const dealerPos = seatToLayoutPos(dealerIndex);
     const dealerCoord = POS_COORDS[dealerPos];
 
     return (
@@ -52,8 +61,7 @@ export const DealingAnimation: React.FC<Props> = ({ dealerIndex, myIndex, curren
             {events.map((evt, idx) => {
                 if (idx > currentStep) return null;
 
-                const targetRel = (evt.targetSeat - mySeat + playerCount) % playerCount;
-                const targetPos = POSITIONS[targetRel];
+                const targetPos = seatToLayoutPos(evt.targetSeat);
                 const targetCoord = POS_COORDS[targetPos];
 
                 return (

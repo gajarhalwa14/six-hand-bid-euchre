@@ -171,3 +171,34 @@
         0 0 0 2px #ffd700,
         0 0 20px rgba(255,215,0,0.5);
 }
+
+/* Mobile card scaling — keep the top-left corner (rank + suit) clearly readable */
+@media (max-width: 600px) {
+    .card { width: 60px; height: 86px; border-radius: 6px; border-width: 1px; }
+    .card-inner { padding: 3px 4px; }
+    .corner-rank { font-size: 12px; letter-spacing: -0.5px; }
+    .corner-suit { font-size: 10px; }
+    .face-letter { font-size: 24px; }
+    .face-suit { font-size: 15px; }
+    .pip { font-size: 13px; }
+    /* On phones, the .my-hand container has overflow:auto so we avoid translateY
+       lifts that would get clipped at the top edge. We keep the visual feedback
+       via scale + glow instead. */
+    .card.playable:hover { transform: scale(1.03); }
+    .card.selected {
+        transform: scale(1.05);
+        box-shadow:
+            0 6px 14px rgba(0,0,0,0.35),
+            0 0 0 2px #ffd700,
+            0 0 14px rgba(255,215,0,0.45);
+    }
+}
+
+@media (max-width: 380px) {
+    .card { width: 52px; height: 76px; }
+    .corner-rank { font-size: 11px; }
+    .corner-suit { font-size: 9px; }
+    .face-letter { font-size: 20px; }
+    .face-suit { font-size: 13px; }
+    .pip { font-size: 11px; }
+}

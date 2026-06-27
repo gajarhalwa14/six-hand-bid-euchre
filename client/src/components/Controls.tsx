@@ -251,6 +251,7 @@ export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds,
     if (gameState.phase === 'TRICK_PLAY') {
         if (gameState.turnIndex === myIndex) {
             const lead = gameState.currentTrick.leadSuit;
+            const canTRAM = !!gameState.canClaimRest;
             return (
                 <div className="panel your-turn-panel">
                     <div>Your Turn — Pick a Card</div>
@@ -264,6 +265,19 @@ export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds,
                         </div>
                     ) : (
                         <div className="lead-suit-hint lead-suit-hint--lead">You lead — play any card</div>
+                    )}
+                    {canTRAM && (
+                        <button
+                            className="tram-btn"
+                            onClick={() => {
+                                if (window.confirm("Claim all remaining tricks? This is only allowed if you can guarantee winning every one.")) {
+                                    socket.emit('claimRest');
+                                }
+                            }}
+                            title="The Rest Are Mine — claim all remaining tricks"
+                        >
+                            🏆 The Rest Are Mine
+                        </button>
                     )}
                 </div>
             );

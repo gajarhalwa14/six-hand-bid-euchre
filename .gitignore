@@ -8,6 +8,19 @@ server/dist/
 # Environment files
 .env
 .env.local
+.env.production
+.env.development
+
+# Capacitor iOS native project: derived data, Pods, user-specific Xcode files.
+# The `ios/App/` Xcode project itself SHOULD be committed once you've added
+# icons, signing config, etc. — just not the build outputs.
+client/ios/App/build/
+client/ios/App/Pods/
+client/ios/App/Podfile.lock
+client/ios/DerivedData/
+client/ios/App/App.xcworkspace/xcuserdata/
+client/ios/App/App.xcodeproj/xcuserdata/
+client/ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
 
 # OS files
 .DS_Store
