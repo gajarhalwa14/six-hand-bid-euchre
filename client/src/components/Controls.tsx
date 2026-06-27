@@ -309,8 +309,8 @@ export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds,
             const canTRAM = !!gameState.canClaimRest;
             return (
                 <div className="panel your-turn-panel">
-                    <div>Your Turn — Pick a Card</div>
-                    <div className="lead-suit-hint">Keys: 1-8 or Arrow keys to hover, Enter (or same number) plays</div>
+                    <div className="your-turn-title">Your Turn — Pick a Card</div>
+                    <div className="lead-suit-hint lead-suit-hint--keys">Keys: 1-8 or Arrow keys to hover, Enter plays</div>
                     {lead ? (
                         <div className="lead-suit-hint">
                             Lead suit:{' '}
