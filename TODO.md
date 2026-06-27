@@ -5,22 +5,26 @@ Legend: `[ ]` not started · `[/]` in progress · `[x]` done
 
 ---
 
-## Bug Fixes
+## Bug Fixes/Priority Features
 
-- [/] **Stop suit being revealing immediately when shooting (i.e 9 Diamonds) until after the bidding phase is over**
+- [x] **Stop suit being revealing immediately when shooting (i.e 9 Diamonds) until after the bidding phase is over**
   This was kinda fixed, but you can still see the suit if it's in high/low (double check this) or if you look in the bidding card when it's your turn to bid
 - [x] **Remove "0 cards" text underneath players**
-- [ ] **Alignment issues in UI, not responsive to different screen sizes**
+- [/] **Alignment issues in UI, not responsive to different screen sizes**
 - [x] **Get rid of lobbies if there are no active players in the lobby**
-- [ ] **Prevent users from creating lobbies by typing in random codes in the join private lobby section** 
+- [ ] **Prevent users from creating lobbies by typing in random codes in the join private lobby section**
+- [ ] **Add confirmation button for passing**
+- [ ] **Fix appearance of cards at lower screen sizes**
+- [ ] **Add indicator for player in lead for each round**
+- [/] **Make it more apparent visually which team you are on and who your teammates are**
 
 ---
 
 ## Features to Add
 
 - [/] **TRAM**
-- [/] **Add dealer and leader icons**
-- [/] **Make it more apparent visually which team you are on and who your teammates are**
+- [ ] **Add history for the game - what the contract was for each round, which team + player bid the contract, who won the round, score of the round**
+- [ ] **Add number of tricks won by each player**
 - [ ] **Revamp card art**
 - [ ] **Settings/Profile page with stats (involves backend stuff)**
 - [ ] **Actually implement public lobbies**
