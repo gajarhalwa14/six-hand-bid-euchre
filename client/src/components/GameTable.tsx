@@ -685,18 +685,6 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                         </div>
                         <div className="player-name">{p.name} {p.isBot ? '🤖' : ''}</div>
                         {bidText && <div className="bid-bubble">{bidText}</div>}
-                        {gameState.tramClaim && pIdx === gameState.tramClaim.playerIndex && (
-                            <div className="tram-announcement">
-                                <div className="tram-speech-bubble">The rest are mine!</div>
-                                <div className="tram-cards">
-                                    {gameState.tramClaim.cards.map(card => (
-                                        <div key={card.id} className="tram-card">
-                                            <Card card={card} />
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                         <div className={`team-label team-${p.team}`}>TEAM {p.team}</div>
                         <div className="player-role-badges">
                             {gameState.phase === 'PRE_BID_DISCARD' && isLeadBidder && (
@@ -774,6 +762,42 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                     );
                 })}
             </div>
+
+            {/* TRAM reveal — centered overlay so cards stay on screen */}
+            {gameState.tramClaim && (() => {
+                const claim = gameState.tramClaim;
+                const claimer = gameState.players[claim.playerIndex];
+                const claimAvatar = claimer?.isBot ? BOT_AVATAR : getAvatarById(claimer?.avatarId);
+                const tramCards = sortHandCards(claim.cards, gameState.trump);
+                return (
+                    <div className="tram-overlay" role="status" aria-live="polite">
+                        <div className="tram-overlay-panel">
+                            <div className="tram-overlay-header">
+                                {claimAvatar && (
+                                    <div className="tram-claimer-avatar" style={{ background: claimAvatar.bg }}>
+                                        <span>{claimAvatar.emoji}</span>
+                                    </div>
+                                )}
+                                <div className="tram-speech-bubble">
+                                    <span className="tram-claimer-name">{claim.playerName}</span>
+                                    <span className="tram-speech-text">The rest are mine!</span>
+                                </div>
+                            </div>
+                            <div className="tram-cards-fan">
+                                {tramCards.map((card, i) => (
+                                    <div
+                                        key={card.id}
+                                        className="tram-card-slot"
+                                        style={{ zIndex: i }}
+                                    >
+                                        <Card card={card} />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* My Hand — only for seated players */}
             {!isSpectator && (

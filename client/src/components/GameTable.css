@@ -803,70 +803,144 @@
     font-weight: 500;
 }
 
-/* TRAM announcement — speech bubble + revealed hand */
-.tram-announcement {
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 210;
+/* TRAM reveal — full-table centered overlay */
+.tram-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.62);
+    backdrop-filter: blur(4px);
+    pointer-events: none;
+    animation: tram-overlay-in 0.3s ease-out;
+}
+
+@keyframes tram-overlay-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.tram-overlay-panel {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-    pointer-events: none;
-    animation: tram-pop-in 0.35s ease-out;
+    gap: 14px;
+    width: min(96vw, 560px);
+    max-height: min(88vh, 520px);
+    padding: 18px 16px 14px;
+    border-radius: 18px;
+    background: linear-gradient(165deg, rgba(18, 30, 52, 0.98) 0%, rgba(8, 14, 28, 0.99) 100%);
+    border: 2px solid rgba(255, 215, 0, 0.45);
+    box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.55),
+        0 0 40px rgba(255, 215, 0, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    animation: tram-panel-pop 0.35s cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
-@keyframes tram-pop-in {
-    from { opacity: 0; transform: translateX(-50%) translateY(8px) scale(0.92); }
-    to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+@keyframes tram-panel-pop {
+    from { opacity: 0; transform: scale(0.9) translateY(12px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.tram-overlay-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+}
+
+.tram-claimer-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    border: 2px solid rgba(255, 215, 0, 0.5);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 .tram-speech-bubble {
     position: relative;
-    padding: 8px 14px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, #ffd700 0%, #f5a623 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 10px 22px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #ffe566 0%, #f5a623 100%);
     color: #1a1200;
-    font-size: 0.78rem;
-    font-weight: 800;
-    white-space: nowrap;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    text-align: center;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    max-width: 100%;
+}
+
+.tram-claimer-name {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    opacity: 0.75;
+}
+
+.tram-speech-text {
+    font-size: 1.05rem;
+    font-weight: 900;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
 }
 
 .tram-speech-bubble::after {
     content: '';
     position: absolute;
-    bottom: -6px;
+    bottom: -8px;
     left: 50%;
     transform: translateX(-50%);
-    border-left: 7px solid transparent;
-    border-right: 7px solid transparent;
-    border-top: 7px solid #f5a623;
+    border-left: 9px solid transparent;
+    border-right: 9px solid transparent;
+    border-top: 9px solid #f5a623;
 }
 
-.tram-cards {
+.tram-cards-fan {
     display: flex;
-    flex-wrap: wrap;
     justify-content: center;
-    gap: 2px;
-    max-width: min(320px, 80vw);
-    padding: 6px 8px;
-    border-radius: 10px;
-    background: rgba(0, 0, 0, 0.55);
-    border: 1px solid rgba(255, 215, 0, 0.25);
+    align-items: flex-end;
+    flex-wrap: nowrap;
+    width: 100%;
+    padding: 4px 8px 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
 }
 
-.tram-card {
-    transform: scale(0.55);
-    transform-origin: center;
-    margin: -14px -8px;
+.tram-card-slot {
+    flex: 0 0 auto;
+    margin: 0 -10px;
+    transition: transform 0.15s ease;
 }
 
-.tram-card .card {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+.tram-card-slot:first-child { margin-left: 0; }
+.tram-card-slot:last-child { margin-right: 0; }
+
+.tram-cards-fan .card {
+    width: clamp(44px, 11vw, 62px);
+    height: clamp(64px, 16vw, 90px);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
+
+.tram-cards-fan .corner-rank { font-size: 10px; }
+.tram-cards-fan .corner-suit { font-size: 9px; }
+.tram-cards-fan .face-letter { font-size: 22px; }
+.tram-cards-fan .face-suit { font-size: 14px; }
+.tram-cards-fan .pip { font-size: 12px; }
 
 .trick-card {
     position: absolute;
@@ -1698,7 +1772,9 @@
     .bidding-center-label { font-size: 0.6rem; }
     .bidding-center-value { font-size: 1.15rem; }
     .bidding-center-turn { font-size: 0.72rem; margin-top: 8px; padding-top: 8px; }
-    .tram-card { transform: scale(0.45); margin: -18px -10px; }
+    .tram-overlay-panel { padding: 14px 12px 12px; gap: 10px; }
+    .tram-speech-text { font-size: 0.92rem; }
+    .tram-cards-fan .card { width: 46px; height: 66px; }
 
     /* Controls: keep above the (smaller) hand */
     .controls-overlay {
