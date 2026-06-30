@@ -6,10 +6,6 @@ Legend: `[ ]` not started · `[/]` in progress · `[x]` done
 ---
 
 ## Bug Fixes/Priority Features
-
-- [x] **Stop suit being revealing immediately when shooting (i.e 9 Diamonds) until after the bidding phase is over**
-  This was kinda fixed, but you can still see the suit if it's in high/low (double check this) or if you look in the bidding card when it's your turn to bid
-- [x] **Remove "0 cards" text underneath players**
 - [/] **Alignment issues in UI, not responsive to different screen sizes**
 - [x] **Get rid of lobbies if there are no active players in the lobby**
 - [ ] **Prevent users from creating lobbies by typing in random codes in the join private lobby section**
@@ -17,6 +13,13 @@ Legend: `[ ]` not started · `[/]` in progress · `[x]` done
 - [ ] **Fix appearance of cards at lower screen sizes**
 - [ ] **Add indicator for player in lead for each round**
 - [/] **Make it more apparent visually which team you are on and who your teammates are**
+- [ ] **Add premoves**
+- [ ] **Grey out cards that you are unable to play**
+- [ ] **Make it more obvious who played what card - maybe add a light color to each card played that represents the team color**
+- [ ] **Add pass icons during bidding phase**
+- [ ] **Fix UI alignment bugs relating to the dealer, bidder tags below players**
+- [ ] **Make it more obvious what suit a player is shooting in**
+- [ ] **Make it easier to distinguish between spades and clubs cards**
 
 ---
 
