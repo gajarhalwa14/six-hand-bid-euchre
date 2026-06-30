@@ -20,6 +20,7 @@ Legend: `[ ]` not started · `[/]` in progress · `[x]` done
 - [ ] **Fix UI alignment bugs relating to the dealer, bidder tags below players**
 - [ ] **Make it more obvious what suit a player is shooting in**
 - [ ] **Make it easier to distinguish between spades and clubs cards**
+- [ ] **Show which team bid the contract more clearly, right now only way to tell is to see what team the bidder is on**
 
 ---
 
