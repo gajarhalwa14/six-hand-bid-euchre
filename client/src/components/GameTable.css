@@ -162,6 +162,27 @@
     margin-left: auto;
 }
 
+.hud-caller-text {
+    margin-top: 4px;
+    font-size: 0.66rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.55);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.hud-caller-team {
+    font-weight: 800;
+}
+
+.hud-caller-team-A {
+    color: #7db6ff;
+}
+
+.hud-caller-team-B {
+    color: #ff9dbc;
+}
+
 /* ---- Chat Panel ---- */
 .chat-panel {
     position: absolute;
@@ -694,6 +715,24 @@
     transition: opacity 0.4s ease;
 }
 
+.premove-status {
+    position: absolute;
+    bottom: 122px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 62;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(10, 18, 32, 0.9);
+    border: 1px solid rgba(255, 215, 0, 0.45);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
 
 .my-hand-card-slot {
     display: flex;
@@ -956,10 +995,12 @@
 .pos-5 { top: 20px;  left: 64px;  z-index: 6; }
 
 .trick-card.team-A .card {
+    background: linear-gradient(145deg, #f1f7ff 0%, #dcecff 100%);
     border: 2px solid rgba(92,156,239,0.5);
 }
 
 .trick-card.team-B .card {
+    background: linear-gradient(145deg, #fff2f7 0%, #ffe0ea 100%);
     border: 2px solid rgba(232,113,150,0.5);
 }
 
@@ -1654,6 +1695,12 @@
 
     .controls-overlay {
         bottom: 130px;
+    }
+
+    .premove-status {
+        bottom: 104px;
+        font-size: 0.66rem;
+        padding: 5px 10px;
     }
 
     .back-home-btn {

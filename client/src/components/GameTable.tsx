@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import type { GameState, Card as CardType, Suit, ChatMessage, SpectatorSwapOffer } from '../types';
 import { determineTrickWinner, getEffectiveSuit } from '@shared/CardUtils';
 import {
@@ -90,6 +90,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     const myPlayer = gameState.players[myIndex];
 
     const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
+    const [queuedPremoveCardId, setQueuedPremoveCardId] = useState<string | null>(null);
     const [collectingTrick, setCollectingTrick] = useState(false);
     const [dealStep, setDealStep] = useState(-1);
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -116,6 +117,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
     useEffect(() => {
         setSelectedCardIds([]);
+        setQueuedPremoveCardId(null);
 
         if (gameState.phase === 'TRICK_END' && prevPhaseRef.current === 'TRICK_PLAY') {
             const timer = setTimeout(() => setCollectingTrick(true), 800);
@@ -359,15 +361,66 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
     const displayHand = gameState.phase === 'DEALING' ? dealingVisibleHand : sortedHand;
     const isMyTurnToPlay = gameState.phase === 'TRICK_PLAY' && gameState.turnIndex === myIndex;
+    const currentLeadSuit = gameState.currentTrick.leadSuit;
 
-    const playCard = (cardId: string) => {
+    const isLegalTrickPlayCard = useCallback((cardId: string): boolean => {
+        if (gameState.phase !== 'TRICK_PLAY' || !myPlayer) return false;
+        const card = myPlayer.hand.find((c) => c.id === cardId);
+        if (!card) return false;
+        if (!currentLeadSuit) return true;
+
+        const hasLeadSuit = myPlayer.hand.some(
+            (c) => getEffectiveSuit(c, gameState.trump) === currentLeadSuit
+        );
+        if (!hasLeadSuit) return true;
+
+        return getEffectiveSuit(card, gameState.trump) === currentLeadSuit;
+    }, [gameState.phase, gameState.trump, currentLeadSuit, myPlayer]);
+
+    const canQueuePremove = useCallback((cardId: string): boolean => {
+        return gameState.phase === 'TRICK_PLAY' && !isMyTurnToPlay && isLegalTrickPlayCard(cardId);
+    }, [gameState.phase, isMyTurnToPlay, isLegalTrickPlayCard]);
+
+    const playCard = useCallback((cardId: string) => {
         socket.emit('playCard', cardId);
         setSelectedCardIds([]);
+        setQueuedPremoveCardId(null);
         setHoveredCardIndex(null);
-    };
+    }, []);
+
+    const handleTrickPlaySelection = useCallback((cardId: string) => {
+        if (isMyTurnToPlay) {
+            playCard(cardId);
+            return;
+        }
+        if (canQueuePremove(cardId)) {
+            setQueuedPremoveCardId((prev) => prev === cardId ? null : cardId);
+        }
+    }, [isMyTurnToPlay, playCard, canQueuePremove]);
 
     useEffect(() => {
-        if (!isMyTurnToPlay || displayHand.length === 0) {
+        if (!queuedPremoveCardId) return;
+        if (gameState.phase !== 'TRICK_PLAY' || !myPlayer) {
+            setQueuedPremoveCardId(null);
+            return;
+        }
+        const stillInHand = myPlayer.hand.some((card) => card.id === queuedPremoveCardId);
+        if (!stillInHand || !isLegalTrickPlayCard(queuedPremoveCardId)) {
+            setQueuedPremoveCardId(null);
+        }
+    }, [queuedPremoveCardId, gameState.phase, gameState.currentTrick.leadSuit, gameState.trump, myPlayer, isLegalTrickPlayCard]);
+
+    useEffect(() => {
+        if (!queuedPremoveCardId || !isMyTurnToPlay) return;
+        if (!isLegalTrickPlayCard(queuedPremoveCardId)) {
+            setQueuedPremoveCardId(null);
+            return;
+        }
+        playCard(queuedPremoveCardId);
+    }, [queuedPremoveCardId, isMyTurnToPlay, gameState.currentTrick.leadSuit, gameState.trump, isLegalTrickPlayCard, playCard]);
+
+    useEffect(() => {
+        if (gameState.phase !== 'TRICK_PLAY' || displayHand.length === 0) {
             setHoveredCardIndex(null);
             return;
         }
@@ -375,10 +428,10 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             if (prev === null) return 0;
             return Math.min(prev, displayHand.length - 1);
         });
-    }, [displayHand.length, isMyTurnToPlay]);
+    }, [displayHand.length, gameState.phase]);
 
     useEffect(() => {
-        if (!isMyTurnToPlay) {
+        if (gameState.phase !== 'TRICK_PLAY') {
             return;
         }
 
@@ -393,7 +446,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 if (hoveredCardIndex !== null) {
                     e.preventDefault();
                     const hoveredCard = displayHand[hoveredCardIndex];
-                    if (hoveredCard) playCard(hoveredCard.id);
+                    if (hoveredCard) handleTrickPlaySelection(hoveredCard.id);
                 }
                 return;
             }
@@ -421,7 +474,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
             e.preventDefault();
             if (hoveredCardIndex === keyNumber - 1) {
-                playCard(card.id);
+                handleTrickPlaySelection(card.id);
             } else {
                 setHoveredCardIndex(keyNumber - 1);
             }
@@ -429,13 +482,11 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [displayHand, hoveredCardIndex, isMyTurnToPlay]);
+    }, [displayHand, hoveredCardIndex, gameState.phase, handleTrickPlaySelection]);
 
     const toggleSelect = (id: string) => {
         if (gameState.phase === 'TRICK_PLAY') {
-            if (isMyTurnToPlay) {
-                playCard(id);
-            }
+            handleTrickPlaySelection(id);
             return;
         }
 
@@ -473,6 +524,9 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     // Calculate Tricks Taken
     const tricksA = gameState.tricksHistory.filter(t => gameState.players[t.winnerIndex!].team === 'A').length;
     const tricksB = gameState.tricksHistory.filter(t => gameState.players[t.winnerIndex!].team === 'B').length;
+    const calledTeam = gameState.declarerIndex !== null
+        ? gameState.players[gameState.declarerIndex]?.team ?? null
+        : null;
 
     // Determine winning card in current trick
     let winningCardIndex = -1;
@@ -521,38 +575,45 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 </div>
 
                 {gameState.phase !== 'LOBBY' && (
-                    <div className="hud-trump-row">
-                        <span className="hud-trump-label">Trump</span>
-                        {shouldHideTrumpHud(gameState, myIndex) ? (
-                            <span className="hud-trump-text">Hidden</span>
-                        ) : gameState.trump ? (
-                            <span className="hud-trump-value" style={{ color: HUD_SUIT_COLOR[gameState.trump] || '#fff' }}>
-                                {SUIT_SYMBOL[gameState.trump]}
-                            </span>
-                        ) : (
-                            <span className="hud-trump-text">
-                                {gameState.winningBid && !shouldConcealShootBidFromViewer(gameState.winningBid, gameState.gameMode, gameState.phase, myIndex)
-                                    ? (gameState.winningBid.type === 'HIGH' ? 'High' : (gameState.winningBid.type === 'LOW' ? 'Low' : '—'))
-                                    : '—'}
-                            </span>
-                        )}
-                        {gameState.winningBid && gameState.declarerIndex !== null && gameState.phase !== 'BIDDING' && (
-                            <span className="hud-contract-text">
-                                {shouldConcealShootBidFromViewer(gameState.winningBid, gameState.gameMode, gameState.phase, myIndex)
-                                    ? getShootLabel(gameState)
-                                    : isShootBid(gameState)
+                    <>
+                        <div className="hud-trump-row">
+                            <span className="hud-trump-label">Trump</span>
+                            {shouldHideTrumpHud(gameState, myIndex) ? (
+                                <span className="hud-trump-text">Hidden</span>
+                            ) : gameState.trump ? (
+                                <span className="hud-trump-value" style={{ color: HUD_SUIT_COLOR[gameState.trump] || '#fff' }}>
+                                    {SUIT_SYMBOL[gameState.trump]}
+                                </span>
+                            ) : (
+                                <span className="hud-trump-text">
+                                    {gameState.winningBid && !shouldConcealShootBidFromViewer(gameState.winningBid, gameState.gameMode, gameState.phase, myIndex)
+                                        ? (gameState.winningBid.type === 'HIGH' ? 'High' : (gameState.winningBid.type === 'LOW' ? 'Low' : '—'))
+                                        : '—'}
+                                </span>
+                            )}
+                            {gameState.winningBid && gameState.declarerIndex !== null && gameState.phase !== 'BIDDING' && (
+                                <span className="hud-contract-text">
+                                    {shouldConcealShootBidFromViewer(gameState.winningBid, gameState.gameMode, gameState.phase, myIndex)
                                         ? getShootLabel(gameState)
-                                        : (
-                                            <>
-                                                {gameState.winningBid.amount}
-                                                {gameState.winningBid.type === 'SUIT' && gameState.winningBid.suit
-                                                    ? <span style={{ color: HUD_SUIT_COLOR[gameState.winningBid.suit] }}> {SUIT_SYMBOL[gameState.winningBid.suit]}</span>
-                                                    : ` ${gameState.winningBid.type}`}
-                                            </>
-                                        )}
-                            </span>
+                                        : isShootBid(gameState)
+                                            ? getShootLabel(gameState)
+                                            : (
+                                                <>
+                                                    {gameState.winningBid.amount}
+                                                    {gameState.winningBid.type === 'SUIT' && gameState.winningBid.suit
+                                                        ? <span style={{ color: HUD_SUIT_COLOR[gameState.winningBid.suit] }}> {SUIT_SYMBOL[gameState.winningBid.suit]}</span>
+                                                        : ` ${gameState.winningBid.type}`}
+                                                </>
+                                            )}
+                                </span>
+                            )}
+                        </div>
+                        {gameState.winningBid && calledTeam && gameState.phase !== 'BIDDING' && (
+                            <div className="hud-caller-text">
+                                Called by <span className={`hud-caller-team hud-caller-team-${calledTeam}`}>Team {calledTeam}</span>
+                            </div>
                         )}
-                    </div>
+                    </>
                 )}
             </div>
 
@@ -801,29 +862,35 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
             {/* My Hand — only for seated players */}
             {!isSpectator && (
-            <div className="my-hand">
-                {displayHand.map((card, index) => {
-                    const keyboardHovered = isMyTurnToPlay && hoveredCardIndex === index;
-                    return (
-                        <div
-                            key={card.id}
-                            className={`my-hand-card-slot ${keyboardHovered ? 'keyboard-hover' : ''}`}
-                            onMouseEnter={() => {
-                                if (isMyTurnToPlay) setHoveredCardIndex(index);
-                            }}
-                        >
-                            <Card
-                                card={card}
-                                playable={gameState.phase === 'TRICK_PLAY' && gameState.turnIndex === myIndex}
-                                selected={selectedCardIds.includes(card.id) || keyboardHovered}
-                                onClick={() => toggleSelect(card.id)}
-                                isTrump={gameState.trump ? getEffectiveSuit(card, gameState.trump) === gameState.trump : false}
-                            />
-                            {index < 8 && <div className="card-shortcut-label">{index + 1}</div>}
-                        </div>
-                    );
-                })}
-            </div>
+                <>
+                    <div className="my-hand">
+                        {displayHand.map((card, index) => {
+                            const keyboardHovered = gameState.phase === 'TRICK_PLAY' && hoveredCardIndex === index;
+                            const hasQueuedPremove = queuedPremoveCardId === card.id;
+                            return (
+                                <div
+                                    key={card.id}
+                                    className={`my-hand-card-slot ${keyboardHovered ? 'keyboard-hover' : ''}`}
+                                    onMouseEnter={() => {
+                                        if (gameState.phase === 'TRICK_PLAY') setHoveredCardIndex(index);
+                                    }}
+                                >
+                                    <Card
+                                        card={card}
+                                        playable={isMyTurnToPlay || canQueuePremove(card.id)}
+                                        selected={selectedCardIds.includes(card.id) || keyboardHovered || hasQueuedPremove}
+                                        onClick={() => toggleSelect(card.id)}
+                                        isTrump={gameState.trump ? getEffectiveSuit(card, gameState.trump) === gameState.trump : false}
+                                    />
+                                    {index < 8 && <div className="card-shortcut-label">{index + 1}</div>}
+                                </div>
+                            );
+                        })}
+                    </div>
+                    {gameState.phase === 'TRICK_PLAY' && !isMyTurnToPlay && queuedPremoveCardId && (
+                        <div className="premove-status">Premove queued - same card, Enter, or same number cancels</div>
+                    )}
+                </>
             )}
 
             {/* Controls Overlay — seated players only */}

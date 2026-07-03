@@ -34,6 +34,7 @@ export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds,
     const [bidType, setBidType] = useState<'SUIT' | 'HIGH' | 'LOW'>('SUIT');
     const [bidSuit, setBidSuit] = useState<Suit>('Spades');
     const [pendingBidConfirm, setPendingBidConfirm] = useState<string | null>(null);
+    const [pendingPassConfirm, setPendingPassConfirm] = useState<boolean>(false);
 
     const formatBidLabel = (amount: number, type: 'SUIT' | 'HIGH' | 'LOW', suit?: Suit): string => {
         if (isShootBidAmount(amount, gameState.gameMode)) {
@@ -91,6 +92,20 @@ export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds,
             setPendingBidConfirm(null);
         };
 
+        const submitPassBid = () => {
+            setPendingPassConfirm(true);
+        };
+
+        const confirmPassBid = () => {
+            socket.emit('inputPassBid');
+            setPendingPassConfirm(false);
+        };
+
+        const clearBidConfirm = () => {
+            setPendingBidConfirm(null);
+            setPendingPassConfirm(false);
+        };
+
         const currentHigh = gameState.winningBid;
         const minBid = currentHigh ? currentHigh.amount + 1 : 3;
 
@@ -98,18 +113,24 @@ export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds,
 
         return (
             <div className="panel bidding-panel">
-                {pendingBidConfirm && (
+                {(pendingBidConfirm || pendingPassConfirm) && (
                     <div className="bid-confirm-overlay" role="dialog" aria-modal="true">
                         <div className="bid-confirm-modal">
                             <p className="bid-confirm-text">
-                                You are bidding: <strong>{pendingBidConfirm}</strong>
+                                {pendingPassConfirm ? (
+                                    <>You are choosing to <strong>Pass</strong></>
+                                ) : (
+                                    <>You are bidding: <strong>{pendingBidConfirm}</strong></>
+                                )}
                             </p>
-                            <p className="bid-confirm-sub">Confirm this bid?</p>
+                            <p className="bid-confirm-sub">
+                                {pendingPassConfirm ? 'Confirm this pass?' : 'Confirm this bid?'}
+                            </p>
                             <div className="bid-confirm-actions">
-                                <button className="bid-confirm-cancel" onClick={() => setPendingBidConfirm(null)}>
+                                <button className="bid-confirm-cancel" onClick={clearBidConfirm}>
                                     Cancel
                                 </button>
-                                <button className="bid-confirm-ok" onClick={confirmBid}>
+                                <button className="bid-confirm-ok" onClick={pendingPassConfirm ? confirmPassBid : confirmBid}>
                                     Confirm
                                 </button>
                             </div>
@@ -210,7 +231,7 @@ export const Controls: React.FC<Props> = ({ gameState, myIndex, selectedCardIds,
                 )}
 
                 <div className="bid-actions">
-                    <button className="pass-btn" onClick={() => socket.emit('inputPassBid')}>Pass</button>
+                    <button className="pass-btn" onClick={submitPassBid}>Pass</button>
                     <button className="submit-bid-btn" onClick={submitBid} disabled={bidAmount < minBid}>Submit Bid</button>
                 </div>
 

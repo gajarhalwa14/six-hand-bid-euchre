@@ -4,9 +4,9 @@ export function isShootBidAmount(amount: number, gameMode: GameMode): boolean {
     return amount === 9 || (gameMode === 'MEGA_DRAFT' && amount === 10);
 }
 
-/** Shoot suit/type stay hidden from non-shooters through discard; revealed at SHOOT_PASS. */
+/** Shoot suit/type stay hidden from everyone except shooter during bidding. */
 export function shouldConcealShootBid(phase: Phase): boolean {
-    return phase === 'BIDDING' || phase === 'SHOOT_DISCARD';
+    return phase === 'BIDDING';
 }
 
 export function shouldConcealShootBidFromViewer(
@@ -15,9 +15,9 @@ export function shouldConcealShootBidFromViewer(
     phase: Phase,
     viewerPlayerIndex: number
 ): boolean {
-    if (!bid || viewerPlayerIndex === -1) return false;
+    if (!bid) return false;
     if (!isShootBidAmount(bid.amount, gameMode)) return false;
-    if (bid.playerIndex === viewerPlayerIndex) return false;
+    // During bidding, shoot details are hidden from everyone (including caller).
     return shouldConcealShootBid(phase);
 }
 
