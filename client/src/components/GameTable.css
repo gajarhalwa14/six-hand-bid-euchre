@@ -751,6 +751,10 @@
     z-index: 60;
 }
 
+.my-hand-card-slot.illegal .card-shortcut-label {
+    opacity: 0.35;
+}
+
 .my-hand > * {
     margin: 0 -12px;
     transition: transform 0.18s ease, margin 0.18s ease, z-index 0s;

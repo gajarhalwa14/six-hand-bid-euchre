@@ -140,6 +140,20 @@
 /* ---- Interactive States ---- */
 .card.playable { cursor: pointer; }
 
+.card.illegal {
+    filter: grayscale(1) brightness(0.82);
+    opacity: 0.42;
+    cursor: not-allowed;
+}
+
+.card.illegal.trump {
+    border-color: #c8c8c8;
+    box-shadow:
+        0 2px 4px rgba(0,0,0,0.18),
+        0 4px 10px rgba(0,0,0,0.10),
+        inset 0 1px 0 rgba(255,255,255,0.9);
+}
+
 .card.playable:hover {
     transform: translateY(-12px) scale(1.03);
     box-shadow:

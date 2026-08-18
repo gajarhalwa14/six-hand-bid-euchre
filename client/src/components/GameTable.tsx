@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import type { GameState, Card as CardType, Suit, ChatMessage, SpectatorSwapOffer } from '../types';
-import { determineTrickWinner, getEffectiveSuit } from '@shared/CardUtils';
+import { determineTrickWinner, getEffectiveSuit, isLegalPlay } from '@shared/CardUtils';
 import {
     isShootBidAmount,
     shouldConcealShootBid,
@@ -362,31 +362,26 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     const displayHand = gameState.phase === 'DEALING' ? dealingVisibleHand : sortedHand;
     const isMyTurnToPlay = gameState.phase === 'TRICK_PLAY' && gameState.turnIndex === myIndex;
     const currentLeadSuit = gameState.currentTrick.leadSuit;
+    const inTrickPlay = gameState.phase === 'TRICK_PLAY';
 
     const isLegalTrickPlayCard = useCallback((cardId: string): boolean => {
-        if (gameState.phase !== 'TRICK_PLAY' || !myPlayer) return false;
+        if (!inTrickPlay || !myPlayer) return false;
         const card = myPlayer.hand.find((c) => c.id === cardId);
         if (!card) return false;
-        if (!currentLeadSuit) return true;
-
-        const hasLeadSuit = myPlayer.hand.some(
-            (c) => getEffectiveSuit(c, gameState.trump) === currentLeadSuit
-        );
-        if (!hasLeadSuit) return true;
-
-        return getEffectiveSuit(card, gameState.trump) === currentLeadSuit;
-    }, [gameState.phase, gameState.trump, currentLeadSuit, myPlayer]);
+        return isLegalPlay(card, myPlayer.hand, currentLeadSuit, gameState.trump);
+    }, [inTrickPlay, gameState.trump, currentLeadSuit, myPlayer]);
 
     const canQueuePremove = useCallback((cardId: string): boolean => {
-        return gameState.phase === 'TRICK_PLAY' && !isMyTurnToPlay && isLegalTrickPlayCard(cardId);
-    }, [gameState.phase, isMyTurnToPlay, isLegalTrickPlayCard]);
+        return inTrickPlay && !isMyTurnToPlay && isLegalTrickPlayCard(cardId);
+    }, [inTrickPlay, isMyTurnToPlay, isLegalTrickPlayCard]);
 
     const playCard = useCallback((cardId: string) => {
+        if (!isLegalTrickPlayCard(cardId)) return;
         socket.emit('playCard', cardId);
         setSelectedCardIds([]);
         setQueuedPremoveCardId(null);
         setHoveredCardIndex(null);
-    }, []);
+    }, [isLegalTrickPlayCard]);
 
     const handleTrickPlaySelection = useCallback((cardId: string) => {
         if (isMyTurnToPlay) {
@@ -425,10 +420,14 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             return;
         }
         setHoveredCardIndex((prev) => {
-            if (prev === null) return 0;
-            return Math.min(prev, displayHand.length - 1);
+            const firstLegal = displayHand.findIndex(c => isLegalTrickPlayCard(c.id));
+            if (firstLegal === -1) return null;
+            if (prev === null) return firstLegal;
+            const clamped = Math.min(prev, displayHand.length - 1);
+            if (isLegalTrickPlayCard(displayHand[clamped].id)) return clamped;
+            return firstLegal;
         });
-    }, [displayHand.length, gameState.phase]);
+    }, [displayHand, inTrickPlay, isLegalTrickPlayCard]);
 
     useEffect(() => {
         if (gameState.phase !== 'TRICK_PLAY') {
@@ -446,7 +445,9 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 if (hoveredCardIndex !== null) {
                     e.preventDefault();
                     const hoveredCard = displayHand[hoveredCardIndex];
-                    if (hoveredCard) handleTrickPlaySelection(hoveredCard.id);
+                    if (hoveredCard && isLegalTrickPlayCard(hoveredCard.id)) {
+                        handleTrickPlaySelection(hoveredCard.id);
+                    }
                 }
                 return;
             }
@@ -454,14 +455,15 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                 e.preventDefault();
                 const step = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -1 : 1;
-                const maxIndex = displayHand.length - 1;
-                if (maxIndex < 0) return;
+                const len = displayHand.length;
+                if (len <= 0) return;
                 setHoveredCardIndex((prev) => {
-                    if (prev === null) return step > 0 ? 0 : maxIndex;
-                    const next = prev + step;
-                    if (next < 0) return maxIndex;
-                    if (next > maxIndex) return 0;
-                    return next;
+                    let idx = prev === null ? (step > 0 ? -1 : 0) : prev;
+                    for (let i = 0; i < len; i++) {
+                        idx = (idx + step + len) % len;
+                        if (isLegalTrickPlayCard(displayHand[idx].id)) return idx;
+                    }
+                    return prev;
                 });
                 return;
             }
@@ -470,7 +472,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             if (!Number.isInteger(keyNumber) || keyNumber < 1 || keyNumber > 8) return;
 
             const card = displayHand[keyNumber - 1];
-            if (!card) return;
+            if (!card || !isLegalTrickPlayCard(card.id)) return;
 
             e.preventDefault();
             if (hoveredCardIndex === keyNumber - 1) {
@@ -482,7 +484,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
 
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [displayHand, hoveredCardIndex, gameState.phase, handleTrickPlaySelection]);
+    }, [displayHand, hoveredCardIndex, inTrickPlay, handleTrickPlaySelection, isLegalTrickPlayCard]);
 
     const toggleSelect = (id: string) => {
         if (gameState.phase === 'TRICK_PLAY') {
@@ -865,19 +867,23 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                 <>
                     <div className="my-hand">
                         {displayHand.map((card, index) => {
-                            const keyboardHovered = gameState.phase === 'TRICK_PLAY' && hoveredCardIndex === index;
+                            const legal = isLegalTrickPlayCard(card.id);
+                            const keyboardHovered = inTrickPlay && legal && hoveredCardIndex === index;
                             const hasQueuedPremove = queuedPremoveCardId === card.id;
+                            const illegal = inTrickPlay && !legal;
                             return (
                                 <div
                                     key={card.id}
-                                    className={`my-hand-card-slot ${keyboardHovered ? 'keyboard-hover' : ''}`}
+                                    className={['my-hand-card-slot', keyboardHovered ? 'keyboard-hover' : '', illegal ? 'illegal' : ''].filter(Boolean).join(' ')}
+                                    title={illegal ? 'Must follow suit' : undefined}
                                     onMouseEnter={() => {
-                                        if (gameState.phase === 'TRICK_PLAY') setHoveredCardIndex(index);
+                                        if (inTrickPlay && legal) setHoveredCardIndex(index);
                                     }}
                                 >
                                     <Card
                                         card={card}
-                                        playable={isMyTurnToPlay || canQueuePremove(card.id)}
+                                        playable={legal && (isMyTurnToPlay || canQueuePremove(card.id))}
+                                        illegal={illegal}
                                         selected={selectedCardIds.includes(card.id) || keyboardHovered || hasQueuedPremove}
                                         onClick={() => toggleSelect(card.id)}
                                         isTrump={gameState.trump ? getEffectiveSuit(card, gameState.trump) === gameState.trump : false}
@@ -887,7 +893,7 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
                             );
                         })}
                     </div>
-                    {gameState.phase === 'TRICK_PLAY' && !isMyTurnToPlay && queuedPremoveCardId && (
+                    {inTrickPlay && !isMyTurnToPlay && queuedPremoveCardId && (
                         <div className="premove-status">Premove queued - same card, Enter, or same number cancels</div>
                     )}
                 </>

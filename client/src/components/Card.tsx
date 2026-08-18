@@ -8,6 +8,7 @@ interface Props {
     onClick?: () => void;
     selected?: boolean;
     playable?: boolean;
+    illegal?: boolean;
     hidden?: boolean;
     isTrump?: boolean;
 }
@@ -59,7 +60,7 @@ function getPipCount(rank: string): number {
     return map[rank] ?? 0;
 }
 
-export const Card: React.FC<Props> = ({ card, onClick, selected, playable, hidden, isTrump }) => {
+export const Card: React.FC<Props> = ({ card, onClick, selected, playable, illegal, hidden, isTrump }) => {
     const color = (card.suit === 'Hearts' || card.suit === 'Diamonds') ? 'red' : 'black';
     const symbol = suitSymbols[card.suit];
     const rankLabel = RANK_DISPLAY[card.rank] || card.rank;
@@ -74,8 +75,10 @@ export const Card: React.FC<Props> = ({ card, onClick, selected, playable, hidde
 
     return (
         <div
-            className={clsx('card', color, { selected, playable, trump: isTrump })}
-            onClick={playable || selected !== undefined ? onClick : undefined}
+            className={clsx('card', color, { selected, playable, illegal, trump: isTrump })}
+            onClick={playable || (!illegal && selected !== undefined) ? onClick : undefined}
+            title={illegal ? 'Must follow suit' : undefined}
+            aria-disabled={illegal || undefined}
         >
             <div className="card-inner">
                 <div className="corner top-left">
