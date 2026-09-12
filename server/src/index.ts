@@ -246,10 +246,19 @@ io.on('connection', (socket) => {
                     socket.emit('error', 'Game is in progress with no bot seats available');
                     return;
                 }
+                game.addSpectator(socket.id, name, (socket as any)._avatarId);
+                socket.emit('autoSpectating', roomId);
                 console.log(`[${roomId}] Player "${name}" joined in-progress game as spectator (can take over a bot)`);
             } else {
-                game.addPlayer(socket.id, name, (socket as any)._avatarId);
-                console.log(`[${roomId}] Player "${name}" joined ${isNewRoom ? '(NEW room)' : '(existing room)'}. Players: ${game.state.players.length}`);
+                const roomIsFull = game.state.players.length >= getMaxPlayers(game.state.gameMode);
+                if (roomIsFull) {
+                    game.addSpectator(socket.id, name, (socket as any)._avatarId);
+                    socket.emit('autoSpectating', roomId);
+                    console.log(`[${roomId}] Room full; "${name}" joined as spectator instead`);
+                } else {
+                    game.addPlayer(socket.id, name, (socket as any)._avatarId);
+                    console.log(`[${roomId}] Player "${name}" joined ${isNewRoom ? '(NEW room)' : '(existing room)'}. Players: ${game.state.players.length}`);
+                }
             }
             game.markActivity();
 

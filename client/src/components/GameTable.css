@@ -22,6 +22,27 @@
     overflow: hidden;
     background:
         radial-gradient(ellipse at 50% 40%, rgba(46,125,50,0.15) 0%, transparent 70%);
+
+    /* Hand layout tokens — peek is the visible left strip (rank + suit). */
+    --hand-card-w: 80px;
+    --hand-card-h: 116px;
+    --card-peek: 32px;
+    --hand-bottom: 16px;
+    --hand-label-h: 22px;
+    --hand-pad-top: 10px;
+    --hand-pad-bottom: 0px;
+    --hand-area: calc(
+        var(--hand-bottom)
+        + var(--hand-pad-top)
+        + var(--hand-card-h)
+        + var(--hand-label-h)
+        + var(--hand-pad-bottom)
+        + 6px
+    );
+}
+
+.table.spectator-view {
+    --hand-area: 28px;
 }
 
 /* ---- HUD Panel (top-left) ---- */
@@ -423,6 +444,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 90px;
+    line-height: 1.2;
 }
 
 .team-A .avatar {
@@ -458,6 +480,7 @@
     color: #fff;
     text-shadow: 0 1px 2px rgba(0,0,0,0.4);
     border: 1px solid rgba(255,255,255,0.18);
+    white-space: nowrap;
 }
 
 /* ---- Spectators Panel (top-right under the Leave button) ---- */
@@ -696,28 +719,49 @@
     pointer-events: none;
 }
 
-.bottom-left { bottom: 18%; left: 8%; }
+.bottom-left {
+    bottom: max(18%, calc(var(--hand-area) + 8px));
+    left: 8%;
+}
 .top-left { top: 18%; left: 8%; }
 .top { top: 60px; left: 50%; transform: translateX(-50%); }
 .top-right { top: 18%; right: 8%; }
-.bottom-right { bottom: 18%; right: 8%; }
+.bottom-right {
+    bottom: max(18%, calc(var(--hand-area) + 8px));
+    right: 8%;
+}
 .left { top: 50%; left: 8%; transform: translateY(-50%); }
 .right { top: 50%; right: 8%; transform: translateY(-50%); }
 
 /* ---- My Hand ---- */
 .my-hand {
     position: absolute;
-    bottom: 16px;
-    left: 50%;
-    transform: translateX(-50%);
+    left: 0;
+    right: 0;
+    bottom: var(--hand-bottom);
     display: flex;
+    justify-content: center;
+    justify-content: safe center;
     z-index: 50;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: var(--hand-pad-top) 16px var(--hand-pad-bottom);
+    overflow: visible;
     transition: opacity 0.4s ease;
+}
+
+.my-hand-inner {
+    display: flex;
+    align-items: flex-end;
+    width: max-content;
+    margin: 0 auto;
+    padding: 0 4px;
 }
 
 .premove-status {
     position: absolute;
-    bottom: 122px;
+    bottom: calc(var(--hand-area) + 8px);
     left: 50%;
     transform: translateX(-50%);
     z-index: 62;
@@ -731,38 +775,46 @@
     letter-spacing: 0.03em;
     text-transform: uppercase;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    white-space: nowrap;
+    max-width: calc(100vw - 24px);
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
-
 
 .my-hand-card-slot {
     display: flex;
     flex-direction: column;
     align-items: center;
-    margin: 0 -12px;
+    flex: 0 0 auto;
+    width: var(--hand-card-w);
+    margin: 0;
+    margin-right: calc(var(--card-peek) - var(--hand-card-w));
+    position: relative;
     transition: transform 0.18s ease, margin 0.18s ease, z-index 0s;
+}
+
+.my-hand-card-slot:last-child {
+    margin-right: 0;
 }
 
 .my-hand-card-slot > .card {
+    width: var(--hand-card-w);
+    height: var(--hand-card-h);
     margin-bottom: 4px;
 }
 
-.my-hand-card-slot.keyboard-hover {
-    margin: 0 4px;
-    z-index: 60;
-}
-
-.my-hand > * {
-    margin: 0 -12px;
-    transition: transform 0.18s ease, margin 0.18s ease, z-index 0s;
-}
-
-.my-hand > *:hover {
-    margin: 0 4px;
-    z-index: 60;
+.my-hand-card-slot:hover,
+.my-hand-card-slot.keyboard-hover,
+.my-hand-card-slot:has(.selected) {
+    margin-right: 6px;
+    margin-left: 6px;
+    z-index: 60 !important;
 }
 
 .card-shortcut-label {
-    min-width: 22px;
+    width: var(--card-peek);
+    min-width: 0;
+    align-self: flex-start;
     text-align: center;
     font-size: 0.7rem;
     font-weight: 700;
@@ -773,6 +825,11 @@
     padding: 1px 6px;
     line-height: 1.2;
     box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    box-sizing: border-box;
+}
+
+.my-hand-card-slot:last-child .card-shortcut-label {
+    width: 100%;
 }
 
 /* ---- Trick Zone ---- */
@@ -961,7 +1018,8 @@
 
 .tram-card-slot {
     flex: 0 0 auto;
-    margin: 0 -10px;
+    margin: 0;
+    margin-right: -8px;
     transition: transform 0.15s ease;
 }
 
@@ -1078,18 +1136,20 @@
 /* ---- Controls Overlay ---- */
 .controls-overlay {
     position: absolute;
-    bottom: 155px;
+    bottom: calc(var(--hand-area) + 8px);
     left: 50%;
     transform: translateX(-50%);
     display: flex;
     justify-content: center;
     pointer-events: none;
     z-index: 60;
+    width: 100%;
     max-width: 100vw;
-    max-height: calc(100svh - 140px);
+    max-height: calc(100svh - var(--hand-area) - 24px);
     overflow-y: auto;
     overflow-x: hidden;
     padding: 0 8px;
+    box-sizing: border-box;
 }
 
 /* ---- Bid Bubble ---- */
@@ -1544,7 +1604,7 @@
     box-shadow: 0 0 30px rgba(255,215,0,0.15);
 }
 
-.team-label {
+.team-score .team-label {
     font-size: 0.85rem;
     font-weight: 600;
     color: rgba(255,255,255,0.6);
@@ -1683,22 +1743,16 @@
     .team-label { font-size: 0.55rem; padding: 1px 6px; }
     .bid-bubble { font-size: 0.68rem; padding: 2px 8px; top: -22px; }
 
-    .my-hand > * {
-        margin: 0 -22px;
+    .table {
+        --card-peek: 30px;
     }
-    .my-hand > *:hover { margin: 0 2px; }
 
     /* Trick zone: scale down so cards don't drift off-center on small screens */
     .trick-zone { transform: translate(0, 0) scale(0.85); transform-origin: center; }
     .bidding-center-panel { min-width: min(240px, 80vw); padding: 14px 18px; }
     .bidding-center-value { font-size: 1.35rem; }
 
-    .controls-overlay {
-        bottom: 130px;
-    }
-
     .premove-status {
-        bottom: 104px;
         font-size: 0.66rem;
         padding: 5px 10px;
     }
@@ -1765,48 +1819,36 @@
         bottom: -6px;
     }
 
-    /* Reposition seats: place corner players closer to corners and the top
-       player a bit lower so the HUD doesn't overlap. Use safe-area where
-       relevant so the notch / Dynamic Island doesn't crash into the avatar. */
+    .table {
+        --hand-card-w: 64px;
+        --hand-card-h: 92px;
+        --card-peek: 28px;
+        --hand-bottom: 0px;
+        --hand-pad-top: 16px;
+        --hand-pad-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    }
+
+    /* Reposition seats: keep them above the hand so avatars/labels don't cover
+       card ranks. Use safe-area where relevant so the notch doesn't clip. */
     .top { top: calc(70px + env(safe-area-inset-top, 0px)); }
-    .bottom-left  { bottom: 22%; left: 2%; }
-    .bottom-right { bottom: 22%; right: 2%; }
+    .bottom-left  { bottom: calc(var(--hand-area) + 6px); left: 2%; }
+    .bottom-right { bottom: calc(var(--hand-area) + 6px); right: 2%; }
     .top-left     { top: calc(18% + env(safe-area-inset-top, 0px) / 2); left: 2%; }
     .top-right    { top: calc(18% + env(safe-area-inset-top, 0px) / 2); right: 2%; }
     .left         { left: 2%; }
     .right        { right: 2%; }
 
-    /* Hand: cards still overlap but every card's top-left corner (rank + suit)
-       is fully readable. The hand scrolls horizontally if 16 cards don't fit. */
     .my-hand {
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        transform: none;
-        width: 100%;
-        max-width: 100vw;
-        padding: 22px 8px calc(8px + env(safe-area-inset-bottom)) 8px;
+        padding-left: 8px;
+        padding-right: 8px;
         overflow-x: auto;
-        overflow-y: visible;
-        justify-content: safe center;
+        overflow-y: hidden;
         scrollbar-width: thin;
         scrollbar-color: rgba(255,255,255,0.25) transparent;
         -webkit-overflow-scrolling: touch;
+        touch-action: pan-x;
     }
-    .my-hand > * {
-        flex-shrink: 0;
-        margin: 0 -16px; /* visible 28px per card => corner readable */
-    }
-    .my-hand > *:hover,
-    .my-hand > *:focus-within {
-        margin: 0 -2px;
-    }
-    /* Smaller cards in hand so 16 fit (with scroll) and corners stay readable */
-    .my-hand .card {
-        width: 60px;
-        height: 86px;
-    }
+
     /* On phones don't translate the selected card up so it doesn't get
        clipped by the hand container's overflow */
     .my-hand .card.selected {
@@ -1823,9 +1865,8 @@
     .tram-speech-text { font-size: 0.92rem; }
     .tram-cards-fan .card { width: 46px; height: 66px; }
 
-    /* Controls: keep above the (smaller) hand */
+    /* Controls: keep above the hand */
     .controls-overlay {
-        bottom: 130px;
         width: 100%;
         padding: 0 8px;
     }
@@ -1886,9 +1927,17 @@
     .player-seat { width: 56px; }
     .avatar { width: 34px; height: 34px; }
     .avatar-emoji, .avatar-initial { font-size: 0.95rem; }
+    .player-name { max-width: 56px; }
 
-    .my-hand .card { width: 52px; height: 76px; }
-    .my-hand > * { margin: 0 -14px; } /* visible ~24px per card */
+    .table {
+        --hand-card-w: 58px;
+        --hand-card-h: 84px;
+        --card-peek: 26px;
+    }
+
+    .controls-overlay {
+        padding: 0 8px;
+    }
 
     .trick-zone { transform: scale(0.55); }
 
@@ -1899,16 +1948,22 @@
    RESPONSIVE — Landscape phones / short heights
    ====================================================== */
 @media (max-height: 500px) and (orientation: landscape) {
+    .table {
+        --hand-card-w: 50px;
+        --hand-card-h: 72px;
+        --card-peek: 24px;
+        --hand-bottom: 4px;
+        --hand-pad-top: 8px;
+        --hand-pad-bottom: 0px;
+        --hand-label-h: 18px;
+    }
+
     .top { top: 30px; }
-    .bottom-left  { bottom: 30%; }
-    .bottom-right { bottom: 30%; }
+    .bottom-left  { bottom: calc(var(--hand-area) + 4px); }
+    .bottom-right { bottom: calc(var(--hand-area) + 4px); }
     .top-left     { top: 12%; }
     .top-right    { top: 12%; }
 
-    .my-hand { bottom: 4px; }
-    .my-hand .card { width: 50px; height: 72px; }
-    .my-hand > * { margin: 0 -32px; }
-
-    .controls-overlay { bottom: 90px; }
+    .controls-overlay { padding: 0 8px; }
     .chat-messages { max-height: 35vh; min-height: 60px; }
 }

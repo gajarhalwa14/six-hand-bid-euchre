@@ -864,28 +864,31 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             {!isSpectator && (
                 <>
                     <div className="my-hand">
-                        {displayHand.map((card, index) => {
-                            const keyboardHovered = gameState.phase === 'TRICK_PLAY' && hoveredCardIndex === index;
-                            const hasQueuedPremove = queuedPremoveCardId === card.id;
-                            return (
-                                <div
-                                    key={card.id}
-                                    className={`my-hand-card-slot ${keyboardHovered ? 'keyboard-hover' : ''}`}
-                                    onMouseEnter={() => {
-                                        if (gameState.phase === 'TRICK_PLAY') setHoveredCardIndex(index);
-                                    }}
-                                >
-                                    <Card
-                                        card={card}
-                                        playable={isMyTurnToPlay || canQueuePremove(card.id)}
-                                        selected={selectedCardIds.includes(card.id) || keyboardHovered || hasQueuedPremove}
-                                        onClick={() => toggleSelect(card.id)}
-                                        isTrump={gameState.trump ? getEffectiveSuit(card, gameState.trump) === gameState.trump : false}
-                                    />
-                                    {index < 8 && <div className="card-shortcut-label">{index + 1}</div>}
-                                </div>
-                            );
-                        })}
+                        <div className="my-hand-inner">
+                            {displayHand.map((card, index) => {
+                                const keyboardHovered = gameState.phase === 'TRICK_PLAY' && hoveredCardIndex === index;
+                                const hasQueuedPremove = queuedPremoveCardId === card.id;
+                                return (
+                                    <div
+                                        key={card.id}
+                                        className={`my-hand-card-slot ${keyboardHovered ? 'keyboard-hover' : ''}`}
+                                        style={{ zIndex: index + 1 }}
+                                        onMouseEnter={() => {
+                                            if (gameState.phase === 'TRICK_PLAY') setHoveredCardIndex(index);
+                                        }}
+                                    >
+                                        <Card
+                                            card={card}
+                                            playable={isMyTurnToPlay || canQueuePremove(card.id)}
+                                            selected={selectedCardIds.includes(card.id) || keyboardHovered || hasQueuedPremove}
+                                            onClick={() => toggleSelect(card.id)}
+                                            isTrump={gameState.trump ? getEffectiveSuit(card, gameState.trump) === gameState.trump : false}
+                                        />
+                                        {index < 8 && <div className="card-shortcut-label">{index + 1}</div>}
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
                     {gameState.phase === 'TRICK_PLAY' && !isMyTurnToPlay && queuedPremoveCardId && (
                         <div className="premove-status">Premove queued - same card, Enter, or same number cancels</div>

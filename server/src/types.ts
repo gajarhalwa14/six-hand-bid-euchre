@@ -137,6 +137,7 @@ export interface ServerToClientEvents {
     gameState: (state: GameState) => void;
     playerJoined: (player: Player) => void;
     roomJoined: (roomId: string) => void;
+    autoSpectating: (roomId: string) => void;
     error: (msg: string) => void;
     roomList: (rooms: RoomInfo[]) => void;
     seatSwapOffer: (offer: SeatSwapOffer) => void;
