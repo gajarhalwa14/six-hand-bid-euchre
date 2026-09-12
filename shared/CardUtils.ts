@@ -37,6 +37,14 @@ export function getEffectiveSuit(card: Card, trump: Suit | null): Suit {
     return card.suit;
 }
 
+/** Follow-suit rule for trick play. Leading (no lead suit) or being void makes every card legal. */
+export function isLegalPlay(card: Card, hand: Card[], leadSuit: Suit | null, trump: Suit | null): boolean {
+    if (!leadSuit) return true;
+    const hasLeadSuit = hand.some(c => getEffectiveSuit(c, trump) === leadSuit);
+    if (!hasLeadSuit) return true;
+    return getEffectiveSuit(card, trump) === leadSuit;
+}
+
 // Get value of card for comparison
 // Returns a value that can be compared relative to other cards in the SAME trick context
 // Higher is better.
