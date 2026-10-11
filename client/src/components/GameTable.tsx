@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import type { GameState, Card as CardType, Suit, ChatMessage, SpectatorSwapOffer } from '../types';
+import type { GameState, Card as CardType, Suit, ChatMessage, SpectatorSwapOffer, Bid } from '../types';
 import { determineTrickWinner, getEffectiveSuit, isLegalPlay } from '@shared/CardUtils';
 import {
     isShootBidAmount,
@@ -106,6 +106,9 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
     const [pendingSwapOffer, setPendingSwapOffer] = useState<SpectatorSwapOffer | null>(null);
     const [swapToast, setSwapToast] = useState<string | null>(null);
     const swapToastTimeoutRef = useRef<number | null>(null);
+    const [finalBidNotice, setFinalBidNotice] = useState<{ bid: Bid; playerName: string; team: 'A' | 'B'; isMe: boolean } | null>(null);
+    const prevBidPhaseRef = useRef(gameState.phase);
+    const finalBidTimeoutRef = useRef<number | null>(null);
     const chatMessagesRef = useRef<HTMLDivElement | null>(null);
     const chatPanelRef = useRef<HTMLDivElement | null>(null);
     const dragStartRef = useRef<{ pointerX: number; pointerY: number; startX: number; startY: number } | null>(null);
@@ -146,6 +149,22 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
         }, DEAL_STEP_MS);
         return () => window.clearInterval(id);
     }, [gameState.phase, gameState.dealerIndex, gameState.roomId, playerCount]);
+
+    useEffect(() => {
+        const prev = prevBidPhaseRef.current;
+        prevBidPhaseRef.current = gameState.phase;
+        if (prev !== 'BIDDING' || gameState.phase === 'BIDDING') return;
+        const bid = gameState.winningBid;
+        const declarer = gameState.declarerIndex !== null ? gameState.players[gameState.declarerIndex] : undefined;
+        if (!bid || !declarer) return;
+        setFinalBidNotice({ bid, playerName: declarer.name, team: declarer.team, isMe: declarer.id === myId });
+        if (finalBidTimeoutRef.current !== null) window.clearTimeout(finalBidTimeoutRef.current);
+        finalBidTimeoutRef.current = window.setTimeout(() => setFinalBidNotice(null), 4000);
+    }, [gameState.phase]);
+
+    useEffect(() => () => {
+        if (finalBidTimeoutRef.current !== null) window.clearTimeout(finalBidTimeoutRef.current);
+    }, []);
 
     const clearSelection = () => setSelectedCardIds([]);
 
@@ -1015,6 +1034,25 @@ export const GameTable: React.FC<Props> = ({ gameState, myId, onLeave }) => {
             {swapToast && (
                 <div className="swap-toast">{swapToast}</div>
             )}
+
+            {finalBidNotice && (() => {
+                const { bid, playerName, team, isMe } = finalBidNotice;
+                const isShoot = isShootBidAmount(bid.amount, gameState.gameMode);
+                const detail = bid.type === 'SUIT' && bid.suit
+                    ? <span style={{ color: HUD_SUIT_COLOR[bid.suit] }}>{SUIT_SYMBOL[bid.suit]}</span>
+                    : (bid.type === 'HIGH' ? 'High' : 'Low');
+                return (
+                    <div className={`final-bid-notice team-${team}`} role="status" aria-live="polite">
+                        <div className="final-bid-notice-label">Bidding Over</div>
+                        <div className="final-bid-notice-value">
+                            {isShoot ? getShootLabelForAmount(bid.amount, gameState.gameMode) : bid.amount} {detail}
+                        </div>
+                        <div className="final-bid-notice-by">
+                            by {isMe ? 'You' : playerName} — <span className={`hud-caller-team hud-caller-team-${team}`}>Team {team}</span>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* Bot Takeover Overlay (only shown for joiners who came in via the
                 normal join path mid-game, NOT for explicit spectators who should

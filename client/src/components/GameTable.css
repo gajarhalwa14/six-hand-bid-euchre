@@ -899,6 +899,59 @@
     font-weight: 500;
 }
 
+/* Final bid announcement shown briefly when bidding ends */
+.final-bid-notice {
+    position: fixed;
+    top: 18%;
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: min(280px, 80vw);
+    padding: 14px 24px;
+    border-radius: 16px;
+    text-align: center;
+    background: linear-gradient(160deg, rgba(12, 22, 42, 0.96) 0%, rgba(8, 14, 28, 0.98) 100%);
+    border: 1px solid rgba(255, 215, 0, 0.35);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(14px);
+    pointer-events: none;
+    z-index: 500;
+    animation: finalBidNoticeIn 0.3s ease-out, finalBidNoticeOut 0.4s ease-in 3.6s forwards;
+}
+
+.final-bid-notice.team-A { border-color: rgba(125, 182, 255, 0.6); }
+.final-bid-notice.team-B { border-color: rgba(255, 157, 188, 0.6); }
+
+.final-bid-notice-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255, 215, 0, 0.75);
+    margin-bottom: 6px;
+}
+
+.final-bid-notice-value {
+    font-size: clamp(1.4rem, 4.5vw, 2rem);
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.2;
+}
+
+.final-bid-notice-by {
+    margin-top: 6px;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+@keyframes finalBidNoticeIn {
+    from { opacity: 0; transform: translate(-50%, -10px) scale(0.96); }
+    to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@keyframes finalBidNoticeOut {
+    to { opacity: 0; transform: translate(-50%, -6px); }
+}
+
 /* TRAM reveal — full-table centered overlay */
 .tram-overlay {
     position: fixed;
